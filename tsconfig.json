@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "allowJs": true,
+    "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "types": ["node", "vite/client"],
+    "paths": { "@assistant-os/domain": ["./packages/domain/src/index.ts"], "@personal-ai-os/domain": ["./packages/domain/src/index.ts"] }
+  },
+  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "api/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "playwright.config.ts"],
+  "exclude": ["node_modules", "vendor", "dist"]
+}

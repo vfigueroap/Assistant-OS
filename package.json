@@ -1,0 +1,53 @@
+{
+  "name": "assistant-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
+    "dev:api": "tsx watch apps/api/dev.ts",
+    "build": "npm run build:web && npm run build:gym",
+    "build:web": "vite build --config apps/web/vite.config.ts",
+    "build:gym": "node scripts/build-gym.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "worker": "tsx apps/worker/src/index.ts",
+    "setup": "tsx scripts/setup.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "preview": "vite preview --config apps/web/vite.config.ts --host 127.0.0.1"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "4.0.118",
+    "@supabase/supabase-js": "2.119.0",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "ai": "7.0.173",
+    "eve": "1.0.0-rc.17",
+    "lucide-react": "1.73.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router-dom": "7.18.5",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
+    "@playwright/test": "1.65.1",
+    "@vercel/node": "31.0.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "supabase": "3.1.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}
