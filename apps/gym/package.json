@@ -1,0 +1,14 @@
+{
+  "name": "@personal-ai-os/gym",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "node ../../scripts/build-gym.mjs",
+    "test": "node --test ../../tests/gym/*.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.0"
+  }
+}

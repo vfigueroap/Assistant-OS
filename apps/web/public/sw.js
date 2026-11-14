@@ -1,0 +1,4 @@
+const CACHE='assistant-os-shell-v1';
+self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys()){if(key.startsWith('assistant-os-shell-')&&key!==CACHE)await caches.delete(key)}await self.clients.claim()})()));
+self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(event.request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/gym/')||!['/icon.svg','/manifest.webmanifest'].includes(url.pathname))return;event.respondWith((async()=>{const cached=await caches.match(event.request);if(cached)return cached;const result=await fetch(event.request);if(result.ok){const cache=await caches.open(CACHE);await cache.put(event.request,result.clone())}return result})())});

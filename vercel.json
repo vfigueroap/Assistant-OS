@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm ci --ignore-scripts",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {"source": "/gym/api/:gym*", "destination": "/api/index?gym=:gym*"},
+    {"source": "/api/:path*", "destination": "/api/index?path=:path*"},
+    {"source": "/gym", "destination": "/gym/index.html"},
+    {"source": "/gym/:rest*", "destination": "/gym/index.html"},
+    {"source": "/:path*", "destination": "/index.html"}
+  ]
+}
