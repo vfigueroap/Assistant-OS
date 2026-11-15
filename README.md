@@ -14,7 +14,7 @@ Portal personal para agenda, entrenamiento, estudios, finanzas y proyectos. La w
 
 ## 1. Primer acceso y propietario
 
-1. En Supabase, abre **Authentication → Providers → Email**. Mantén la confirmación de correo activada. En **Authentication → Password Security**, activa [protección contra contraseñas filtradas](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection): el asesor de seguridad del proyecto la muestra todavía desactivada. El SMTP de prueba de Supabase tiene límites; si el correo no llega, usa **Authentication → Users → Add user** en el panel para crear tu usuario y confirmar su correo. Nunca pegues contraseñas aquí ni en Git.
+1. En Supabase, abre **Authentication → Providers → Email**. Mantén la confirmación de correo activada y usa una contraseña larga y única. El asesor de seguridad advierte que la protección contra contraseñas filtradas está desactivada; [Supabase la excluye del plan Free](https://supabase.com/pricing), así que no cambies a un plan de pago solo por este aviso. El SMTP de prueba de Supabase tiene límites; si el correo no llega, usa **Authentication → Users → Add user** en el panel para crear tu usuario y confirmar su correo. Nunca pegues contraseñas aquí ni en Git.
 2. Abre la web y crea tu cuenta o entra con la cuenta creada. La pantalla mostrará tu UUID de usuario. Copia ese UUID.
 3. En **Supabase → SQL Editor**, ejecuta una sola vez, sustituyendo el valor por tu UUID:
 
@@ -117,9 +117,26 @@ docker compose -f infra/compose.yaml ps
 docker compose -f infra/compose.yaml logs --tail=100 worker extractor
 ```
 
-Antes de actualizar, pausa agentes y toma un respaldo. `infra/backup.sh` crea un dump de PostgreSQL con `pg_dump`, lo cifra con restic y ejecuta `restic check`. Necesita `DATABASE_URL`, `RESTIC_REPOSITORY` y `RESTIC_PASSWORD_FILE` en un archivo de entorno privado fuera de Git; `pg_dump` y `restic` instalados en el HP. La contraseña restic debe tener una copia de recuperación fuera del HP. Programa el script con systemd timer y prueba `pg_restore` en una base separada. **El script cubre la base de datos, no los objetos de Supabase Storage**: exporta también los documentos y boletas del bucket privado antes de considerar completo un backup. No elimines originales. Calcula el tráfico mensual antes de descargar bases completas diariamente.
+Antes de actualizar, pausa agentes y toma un respaldo. `infra/backup.sh` descarga un dump de PostgreSQL y todos los objetos del bucket privado `personal-files`, los guarda juntos en un snapshot cifrado de restic y ejecuta `restic check`. Requiere `pg_dump`, `rclone` y `restic` instalados en el HP. Guarda un archivo de entorno privado **fuera de Git y separado de `.env.hp`** con:
 
-Si el worker falla, consulta los logs locales, la cola en **Sistema** y los logs de Supabase/Vercel. Los cambios de esquema están versionados en Git; nunca edites un archivo de migración ya aplicado para actualizar una instalación: crea una migración nueva. Para restaurar, desactiva el worker, restaura base y objetos juntos, verifica RLS y propietario, y solo entonces reanuda agentes.
+```bash
+DATABASE_URL='conexión PostgreSQL de Supabase'
+RESTIC_REPOSITORY='/ruta/a/un/disco/de/respaldo'
+RESTIC_PASSWORD_FILE='/ruta/privada/clave-restic'
+RCLONE_CONFIG_SUPABASE_TYPE='s3'
+RCLONE_CONFIG_SUPABASE_PROVIDER='Other'
+RCLONE_CONFIG_SUPABASE_ENDPOINT='https://vpubsipbxppjaplhyzgk.storage.supabase.co/storage/v1/s3'
+RCLONE_CONFIG_SUPABASE_REGION='us-west-2'
+RCLONE_CONFIG_SUPABASE_FORCE_PATH_STYLE='true'
+RCLONE_CONFIG_SUPABASE_ACCESS_KEY_ID='clave S3 creada en Storage → Configuration → S3'
+RCLONE_CONFIG_SUPABASE_SECRET_ACCESS_KEY='secreto S3'
+```
+
+Activa S3 en **Supabase → Storage → Configuration → S3** y genera las claves allí. [La documentación oficial](https://supabase.com/docs/guides/storage/s3/authentication) advierte que estas claves tienen acceso completo a Storage y omiten RLS: úsalas solo en el proceso local de respaldo, nunca en el worker, Vercel ni Git. Ejecuta el script con ese entorno cargado por un servicio privado del HP. No imprime las claves; limita permisos del archivo a tu usuario. La contraseña de restic debe tener una copia de recuperación fuera del HP.
+
+En Supabase Free, el respaldo descarga de nuevo todos los archivos cada vez. Por ejemplo, 1 GB de archivos una vez por semana consume cerca de 4 GB al mes antes de contar base y otros accesos. Ajusta la frecuencia a la cuota real de salida; evita una descarga completa diaria. Para restaurar, primero recupera un snapshot con `restic restore` a una carpeta separada, comprueba el dump con `pg_restore --list`, revisa los archivos recuperados y prueba la restauración en un proyecto aislado. Solo después coordina la restauración de la base y la subida de los objetos con `rclone copy` al bucket de destino. Mantén el worker pausado y verifica propietario, RLS y referencias de archivos antes de reanudar. No elimines originales. Aún no se ha ejecutado un ciclo real de backup y restauración del proyecto con datos personales.
+
+Si el worker falla, consulta los logs locales, la cola en **Sistema** y los logs de Supabase/Vercel. Los cambios de esquema están versionados en Git; nunca edites un archivo de migración ya aplicado para actualizar una instalación: crea una migración nueva.
 
 ## 8. Desarrollo y pruebas
 
