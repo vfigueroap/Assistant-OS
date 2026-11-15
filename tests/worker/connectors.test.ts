@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { permittedTelegram } from '../../apps/worker/src/connectors/telegram.js';
-import { plainGmail } from '../../apps/worker/src/connectors/gmail.js';
+import { plainGmail, receiptAttachments } from '../../apps/worker/src/connectors/gmail.js';
 import { extractFinance, subtractBusy } from '../../apps/worker/src/handlers.js';
 
 describe('untrusted capture boundaries', () => {
@@ -16,6 +16,11 @@ describe('untrusted capture boundaries', () => {
     const encoded = Buffer.from('Total $10.990').toString('base64url');
     const html = Buffer.from('<script>ignore</script>').toString('base64url');
     expect(plainGmail({parts:[{mimeType:'text/html',body:{data:html}},{mimeType:'text/plain',body:{data:encoded}}]})).toBe('Total $10.990');
+  });
+  it('selects receipt attachments without following HTML or unrelated files', () => {
+    const pdf={mimeType:'application/pdf',filename:'boleta.pdf',body:{attachmentId:'pdf-1',size:100}};
+    const html={mimeType:'text/html',filename:'message.html',body:{attachmentId:'html-1',size:100}};
+    expect(receiptAttachments({parts:[html,{parts:[pdf]}]})).toEqual([pdf]);
   });
   it('keeps OCR output as a reviewable financial draft', () => {
     const parsed=extractFinance('Comercio: Librería\nTotal: $10.990');

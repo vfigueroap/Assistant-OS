@@ -9,12 +9,12 @@ Portal personal para agenda, entrenamiento, estudios, finanzas y proyectos. La w
 - Código: <https://github.com/vfigueroap/Assistant-OS>
 - Supabase: proyecto `Assistant-OS`, región `us-west-2`, referencia `vpubsipbxppjaplhyzgk`.
 - Vercel: proyecto `assistant-os` del equipo `bsa`.
-- Web: URL asignada por Vercel al primer despliegue; `/gym/` abre el gimnasio.
+- Web: <https://assistant-os-five.vercel.app/>; `/gym/` abre el gimnasio.
 - `apps/web`: portal React. `apps/api`: API breve para openGym. `apps/worker`: agentes y conectores del HP. `services/extractor`: OCR y lectura de archivos. `supabase/migrations`: esquema y permisos. `vendor/opengym`: código fuente fijado v1.4.4. `infra`: contenedores y backup.
 
 ## 1. Primer acceso y propietario
 
-1. En Supabase, abre **Authentication → Providers → Email**. Mantén la confirmación de correo activada. El SMTP de prueba de Supabase tiene límites; si el correo no llega, usa **Authentication → Users → Add user** en el panel para crear tu usuario y confirmar su correo. Nunca pegues contraseñas aquí ni en Git.
+1. En Supabase, abre **Authentication → Providers → Email**. Mantén la confirmación de correo activada. En **Authentication → Password Security**, activa [protección contra contraseñas filtradas](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection): el asesor de seguridad del proyecto la muestra todavía desactivada. El SMTP de prueba de Supabase tiene límites; si el correo no llega, usa **Authentication → Users → Add user** en el panel para crear tu usuario y confirmar su correo. Nunca pegues contraseñas aquí ni en Git.
 2. Abre la web y crea tu cuenta o entra con la cuenta creada. La pantalla mostrará tu UUID de usuario. Copia ese UUID.
 3. En **Supabase → SQL Editor**, ejecuta una sola vez, sustituyendo el valor por tu UUID:
 
@@ -24,6 +24,8 @@ Portal personal para agenda, entrenamiento, estudios, finanzas y proyectos. La w
 
    La función mantiene un solo propietario. No uses el UUID de un usuario ajeno. Vuelve a cargar la web; ahora aparecerán tus datos.
 4. En **Sistema**, pulsa **Reanudar agentes** solo cuando el HP esté configurado. Tareas, finanzas manuales y gimnasio funcionan aunque los agentes sigan pausados.
+
+Si prefieres crear tu cuenta más adelante, deja esta sección pendiente. Las pruebas con sesión real del portal y del gimnasio también quedarán pendientes hasta entonces.
 
 La migración inicial ya se aplicó al proyecto citado. Para otra instalación, ejecuta en orden los archivos de `supabase/migrations` con Supabase CLI o SQL Editor. Comprueba las alertas de seguridad y el aislamiento de las tablas antes de abrir el registro.
 
@@ -85,7 +87,9 @@ El extractor no publica ningún puerto y solo es alcanzable por el worker. La co
 
 **Gmail.** Crea un proyecto OAuth propio en Google Cloud, habilita Gmail API y configura un cliente OAuth de tipo **Desktop app** con redirect loopback `http://127.0.0.1:8765/callback`. En Gmail prepara una etiqueta específica para notificaciones financieras. Configura su ID en `GMAIL_LABEL_IDS` y una lista de remitentes exactos en `GMAIL_ALLOWED_SENDERS` (ambos son obligatorios para este conector). Completa `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET` en `.env.hp` y ejecuta `node scripts/authorize-google.mjs gmail` en el HP. Abre la URL indicada en un navegador de confianza; si accedes al HP por SSH, usa el túnel que muestra el script. Guarda el refresh token automáticamente en `.env.hp`, sin imprimirlo. Activa `GMAIL_ENABLED=true` y reinicia el worker. El scope `gmail.readonly` permite leer todo el buzón aunque el programa filtre la etiqueta: usa una cuenta separada si ese alcance no te conviene. Los tokens de una app OAuth en modo Testing pueden caducar a los siete días. El conector nunca envía, borra ni etiqueta correos.
 
-**Google Calendar.** Habilita Calendar API en el mismo proyecto OAuth. Ejecuta `node scripts/authorize-google.mjs calendar` para conceder lectura de eventos y, si autorizas escritura, `calendar.app.created` para un calendario de la aplicación. Configura el calendario permitido en el HP. Las invitaciones, cancelaciones y cambios externos se proponen en **Sistema** y requieren aprobación vinculada al contenido exacto. Una operación cuyo resultado sea incierto queda en estado `unknown` para reconciliación, no se reintenta a ciegas.
+**Google Calendar.** Habilita Calendar API en el mismo proyecto OAuth. Ejecuta `node scripts/authorize-google.mjs calendar` para conceder lectura de eventos y, si autorizas escritura, `calendar.app.created` para un calendario de la aplicación. Configura `GOOGLE_CALENDAR_CONNECTIONS` en `.env.hp`, por ejemplo `[{"id":"personal","calendarId":"primary","systemOwned":false}]`; el ID que escribas en **Sistema** será `personal`. Marca `systemOwned:true` solo para un calendario secundario creado por esta aplicación y aprobado para escritura. Las invitaciones, cancelaciones y cambios externos se proponen en **Sistema** y requieren aprobación vinculada al contenido exacto. Una operación cuyo resultado sea incierto queda en estado `unknown` para reconciliación, no se reintenta a ciegas.
+
+En **Sistema → Solicitar trabajo** puedes sincronizar el calendario, consultar los repositorios permitidos, registrar una métrica manual o pedir una propuesta de planificación. **Sincronización programada** crea un trabajo periódico de calendario cada hora, seis horas o un día. Supabase guarda el horario; el HP ejecuta los trabajos al conectarse. La pausa global impide materializar nuevas ejecuciones mientras esté activa.
 
 **Garmin.** Si tu cuenta ofrece Garmin Connect Personal API, genera allí una clave propia y guárdala solo en el HP; valida acceso antes de activar la sincronización. La primera versión acepta importaciones de métricas normalizadas; no promete publicar rutinas al reloj. La API personal publicada es de lectura. La importación manual es alternativa cuando la clave no esté disponible.
 
@@ -98,7 +102,7 @@ Las integraciones pendientes se muestran como pendientes; un icono en la web no 
 ## 6. Datos, finanzas y límites
 
 - En **Finanzas**, registra compras, ingresos, devoluciones, transferencias y pagos de tarjeta. Los importes se guardan como enteros; CLP y USD nunca se suman. Una boleta subida produce evidencia y un borrador para revisión. El gasto confirmado excluye transferencias y pagos de tarjeta propios.
-- Una boleta y un correo relacionados son evidencias separadas. La coincidencia ambigua se revisa; no se fusiona por importe y fecha solamente.
+- Una boleta y un correo relacionados son evidencias separadas. Al confirmar un borrador, la web comprueba compras ya confirmadas con mismo importe, moneda, tipo, comercio y fecha próxima. Si encuentra una posible repetición, exige revisar y decidir expresamente si es otra compra o si se descarta el borrador. También permite clasificar el borrador como pago de tarjeta, transferencia, devolución o ingreso antes de confirmarlo. La coincidencia ambigua nunca se fusiona automáticamente.
 - **Estudios** admite archivos seleccionados hasta el límite gratuito de Storage. El extractor aísla PDF, imagen y Office; si no puede leer una página, muestra advertencias en vez de fabricar citas.
 - La base de datos y Storage privados están sujetos a las cuotas de Supabase Free. Vigila el panel de uso, y evita cargar fotos o bibliotecas completas en la nube. El worker puede quedar desconectado mientras el portal sigue disponible. Supabase Free puede pausarse por inactividad.
 - **Sistema → Pausar agentes** bloquea nuevos trabajos y escrituras externas. La lectura y edición manual continúan.
