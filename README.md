@@ -83,7 +83,7 @@ npm.cmd run test:e2e
 python -m unittest discover -s services/extractor -p 'test_*.py'
 ```
 
-`check` ejecuta TypeScript, pruebas de dominio/web/backend, pruebas Node del gimnasio y ambos builds. Las pruebas de migraciones usan PostgreSQL embebido con sustitución de pgvector para validar RLS y conflictos; no certifican embeddings ni una instancia remota. Las de navegador usan un perfil temporal y datos de prueba, sin acceder a tus cuentas.
+`check` ejecuta TypeScript, compila y después comprueba dominio/web/backend y transporte gym. Las pruebas del servidor necesitan los archivos compilados; por eso la compilación va antes de `npm test`, también en GitHub. Las pruebas de migraciones usan PostgreSQL embebido con sustitución de pgvector para validar RLS y conflictos; no certifican embeddings ni una instancia remota. Las de navegador usan un perfil temporal y datos de prueba, sin acceder a tus cuentas.
 
 El portal conserva verde y papel del manifiesto existente, tipografía del sistema y listas de registros. Consulta la [verificación de preparación](anti-slop/audit-002-2026-11-16.md), además de la [auditoría inicial](anti-slop/audit-001-2026-11-15.md), para resultados y límites.
 

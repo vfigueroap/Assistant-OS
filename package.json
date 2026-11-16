@@ -27,7 +27,7 @@
     "test:e2e": "playwright test",
     "worker": "node --env-file-if-exists=.env scripts/run.mjs worker",
     "setup": "node --env-file-if-exists=.env scripts/run.mjs setup",
-    "check": "npm run typecheck && npm test && npm run test:gym && npm run build",
+    "check": "npm run typecheck && npm run build && npm test && npm run test:gym",
     "preview": "node --env-file-if-exists=.env scripts/run.mjs preview"
   },
   "dependencies": {

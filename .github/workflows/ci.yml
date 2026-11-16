@@ -13,10 +13,7 @@ jobs:
           node-version: '26'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
-      - run: node --test tests/gym/*.test.mjs
+      - run: npm run check
   containers:
     runs-on: ubuntu-latest
     steps:
