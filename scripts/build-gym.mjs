@@ -7,8 +7,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const upstream = path.join(root, 'vendor/opengym')
 const frontend = path.join(upstream, 'frontend')
-const output = path.join(root, 'apps/gym/dist')
-const deployment = path.join(root, 'dist/gym')
+const output = path.join(root, 'dist/gym')
 const pinned = '5f5832db56080837b58342ff50f78631dcc63e07'
 
 async function exists(file) { try { await access(file); return true } catch { return false } }
@@ -33,7 +32,7 @@ await run(process.execPath, [vite, 'build', '--outDir', output, '--emptyOutDir']
   APP_BUILD: `assistant-os.${pinned.slice(0, 8)}`,
   VITE_DEMO: '0',
   VITE_MOBILE: '0',
-  VITE_GYM_SOURCE_URL: process.env.VITE_GYM_SOURCE_URL || 'https://github.com/vfigueroap/Assistant-OS',
+  VITE_GYM_SOURCE_URL: process.env.VITE_GYM_SOURCE_URL || `https://github.com/vfigueroap/Assistant-OS/tree/${process.env.VERCEL_GIT_COMMIT_SHA || 'main'}`,
   VITE_IMG_BASE: '/gym/exercise-media/still/',
   VITE_GIF_BASE: '/gym/exercise-media/clip/',
 })
@@ -41,6 +40,4 @@ await run(process.execPath, [path.join(upstream, 'scripts/catalogue/stage-media.
 await cp(path.join(upstream, 'LICENSE'), path.join(output, 'LICENSE'))
 await cp(path.join(upstream, 'NOTICE.md'), path.join(output, 'NOTICE.md'))
 await writeFile(path.join(output, 'upstream.json'), JSON.stringify({ name: 'openGym', version: '1.4.4', commit: pinned, adapted: true }) + '\n')
-await mkdir(deployment, { recursive: true })
-await cp(output, deployment, { recursive: true, force: true })
 console.log('openGym: original training UI, licensed media and cloud adapter built at dist/gym/')

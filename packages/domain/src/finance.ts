@@ -4,13 +4,13 @@ export type Currency = keyof typeof minorUnitDigits;
 /** Parse decimal input without floating-point rounding. CLP/JPY use grouped integers;
  * USD/GBP use en-US notation; EUR/BRL use decimal comma. Specify locale to override. */
 export function parseMoney(input: string, currency: string = 'CLP', locale?: 'es-CL' | 'en-US'): number {
-  if (!(currency in minorUnitDigits)) throw new RangeError(`Unsupported currency: ${currency}`);
+  if (!Object.hasOwn(minorUnitDigits, currency)) throw new RangeError(`Unsupported currency: ${currency}`);
   const digits = minorUnitDigits[currency as Currency];
   const convention = locale ?? (['USD', 'GBP'].includes(currency) ? 'en-US' : 'es-CL');
   const decimal = convention === 'en-US' ? '.' : ',';
   const thousands = convention === 'en-US' ? ',' : '.';
   let text = input.trim().replace(/\u2212/g, '-').replace(/\u00a0/g, ' ');
-  text = text.replace(/^(?:CLP|USD|EUR|GBP|JPY|BRL)\s*/i, '').replace(/^[$€£¥R]\s*/, '').trim();
+  text = text.replace(/^(?:CLP|USD|EUR|GBP|JPY|BRL)\s*/i, '').replace(/^(?:R\$|[$€£¥])\s*/, '').trim();
   if (!text) throw new Error('Amount is required');
   let sign = 1n;
   if (text.startsWith('-')) { sign = -1n; text = text.slice(1); }
@@ -46,7 +46,7 @@ export interface FinancialTransaction {
 
 export function summarizeFinance(transactions: readonly FinancialTransaction[], currency: string = 'CLP') {
   let incomeMinor = 0; let expenseMinor = 0; let refundMinor = 0; let draftCount = 0;
-  const byCategory: Record<string, number> = {};
+  const byCategory: Record<string, number> = Object.create(null);
   for (const tx of transactions) {
     if (!Number.isSafeInteger(tx.amountMinor) || tx.amountMinor < 0) throw new Error('Transactions require non-negative integer minor units');
     if (tx.currency !== currency || tx.status === 'void') continue;

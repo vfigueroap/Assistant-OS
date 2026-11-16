@@ -13,8 +13,8 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "types": ["node", "vite/client"],
-    "paths": { "@assistant-os/domain": ["./packages/domain/src/index.ts"], "@personal-ai-os/domain": ["./packages/domain/src/index.ts"] }
+    "paths": { "@personal-ai-os/domain": ["./packages/domain/src/index.ts"] }
   },
-  "include": ["apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "api/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "playwright.config.ts"],
+  "include": ["api/**/*.ts", "apps/**/*.ts", "apps/**/*.tsx", "packages/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "playwright.config.ts"],
   "exclude": ["node_modules", "vendor", "dist"]
 }

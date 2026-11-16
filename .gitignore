@@ -26,3 +26,5 @@ vendor/opengym/**/dist/
 vendor/opengym/.git/
 apps/gym/dist/
 *.tsbuildinfo
+.codex/
+graphify-out/

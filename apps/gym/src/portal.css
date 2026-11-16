@@ -1,9 +1,12 @@
 .aios-gym-boundary{max-width:540px;min-height:70vh;margin:0 auto;padding:64px 28px 36px;color:var(--label,#e8ece7);font-family:inherit;box-sizing:border-box}
 .aios-gym-boundary h1{font-size:clamp(30px,7vw,42px);line-height:1.08;letter-spacing:-.04em;margin:12px 0 20px}
 .aios-gym-boundary p{line-height:1.65;color:var(--label-2,#a7b0a4);font-size:16px}
-.aios-gym-boundary .aios-gym-eyebrow{font-size:11px;letter-spacing:.15em;color:var(--acc,#c0f276);font-weight:700;margin-top:32px}
-.aios-gym-mark{height:64px;width:64px;border-radius:18px;display:grid;place-items:center;background:var(--acc,#c0f276);color:#172011;font-size:32px}
+.aios-gym-boundary .aios-gym-eyebrow{font-size:13px;color:var(--label-2,#a7b0a4);font-weight:700;margin-top:32px}
 .aios-gym-button{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:0 20px;border-radius:12px;background:var(--acc,#c0f276);color:#172011!important;text-decoration:none;font-weight:700;margin:10px 0 18px}
 .aios-gym-boundary .aios-gym-note{font-size:13px}.aios-gym-back{color:var(--label-2,#a7b0a4);text-decoration:none;font-size:14px}
 .aios-gym-settings{padding-top:28px}.aios-gym-source{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;font-size:11px;line-height:1.6;margin:30px 20px 92px;color:var(--label-3,#8b9387)}
 .aios-gym-source a{color:inherit;text-decoration:underline;text-underline-offset:3px}.aios-gym-boundary>.aios-gym-source{margin:36px 0 0}
+.aios-gym-boundary a,.aios-gym-source a{cursor:pointer;display:inline-flex;align-items:center;min-height:44px;overflow-wrap:anywhere}
+.aios-gym-boundary a:focus-visible,.aios-gym-source a:focus-visible{outline:3px solid var(--acc,#c0f276);outline-offset:4px}
+.aios-gym-boundary a:hover,.aios-gym-source a:hover{text-decoration:underline;text-underline-offset:3px}
+.aios-gym-boundary a:active,.aios-gym-source a:active{transform:translateY(1px)}

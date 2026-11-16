@@ -20,6 +20,9 @@ test('shared session reaches only the same-origin gym API', async () => {
   assert.equal(calls[0].init.headers.get('authorization'), 'Bearer owner-token')
   assert.equal(calls[0].init.cache, 'no-store')
   await assert.rejects(request('https://attacker.invalid/gym/api/me'), /outside the gym API/)
+  await assert.rejects(request('https://attacker.invalid/gym/api/data', {
+    method: 'PUT', body: JSON.stringify({ state: { note: 'x'.repeat(1_100_000) } }),
+  }), /outside the gym API/)
   assert.equal(calls.length, 1)
 })
 

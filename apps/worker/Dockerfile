@@ -9,6 +9,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY apps/worker apps/worker
 COPY packages/domain packages/domain
 COPY tsconfig.json ./
+COPY scripts/run.mjs scripts/run.mjs
 RUN mkdir -p /state && chown node:node /state
 USER node
 ENV WORKER_STATE_DIR=/state NODE_ENV=production

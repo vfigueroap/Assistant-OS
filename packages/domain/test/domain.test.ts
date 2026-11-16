@@ -7,6 +7,7 @@ describe('integer money', () => {
     expect(parseMoney('0.29', 'USD')).toBe(29);
     expect(parseMoney('1.234,50', 'EUR')).toBe(123450);
     expect(parseMoney('-10')).toBe(-10);
+    expect(parseMoney('R$ 1,25', 'BRL')).toBe(125);
   });
   it('rejects fractions of pesos, malformed groups, unsafe totals, and ambiguous notation', () => {
     for (const input of ['1,50', '12.34', '1e3', 'NaN', '9007199254740992']) expect(() => parseMoney(input)).toThrow();
@@ -16,6 +17,11 @@ describe('integer money', () => {
     const base = { currency: 'CLP', status: 'confirmed' as const };
     const summary = summarizeFinance([{ ...base, id: '1', amountMinor: 10000, direction: 'income' }, { ...base, id: '2', amountMinor: 3000, direction: 'expense' }, { ...base, id: '3', amountMinor: 500, direction: 'refund' }, { ...base, id: '4', amountMinor: 9000, direction: 'transfer' }, { ...base, id: '5', amountMinor: 999, direction: 'expense', status: 'draft' }]);
     expect(summary.netMinor).toBe(7500); expect(summary.draftCount).toBe(1);
+  });
+  it('sums categories without inherited object properties', () => {
+    const base = { currency: 'CLP', status: 'confirmed' as const, direction: 'expense' as const };
+    const summary = summarizeFinance(['__proto__', 'constructor', 'toString'].map((category, i) => ({ ...base, id: String(i), amountMinor: 100, category })));
+    expect(Object.values(summary.byCategory)).toEqual([100, 100, 100]);
   });
   it('matches evidence only by exact owner-scoped identity', () => {
     const hash = 'a'.repeat(64);
@@ -44,6 +50,17 @@ describe('action authorization', () => {
 });
 
 describe('capacity planning', () => {
+  it('keeps a window available when an earlier task cannot meet its deadline', () => {
+    const result = planWeek({ availability: [{ startAt: '2026-11-16T10:00:00Z', endAt: '2026-11-16T12:00:00Z' }], tasks: [{ id: 'late', title: 'Late', durationMinutes: 30, priority: 2, dueAt: '2026-11-16T10:05:00Z' }, { id: 'next', title: 'Next', durationMinutes: 30, priority: 1 }] });
+    expect(result.blocks.map(block => block.sourceId)).toEqual(['next']);
+    expect(result.unscheduled.map(task => task.taskId)).toEqual(['late']);
+  });
+  it('uses later days in a continuous window after the daily limit is reached', () => {
+    const result = planWeek({ availability: [{ startAt: '2026-11-16T23:00:00Z', endAt: '2026-11-17T02:00:00Z' }], preferences: { dailyWorkMinutes: 30, bufferMinutes: 0 }, tasks: [{ id: 'a', title: 'A', durationMinutes: 60, priority: 1 }] });
+    expect(result.blocks).toHaveLength(2);
+    expect(result.blocks[1]?.startAt).toBe('2026-11-17T00:00:00.000Z');
+    expect(result.unscheduled).toEqual([]);
+  });
   it('preserves availability and reports overload instead of filling rest', () => {
     const result = planWeek({ availability: [{ startAt: '2026-11-16T13:00:00Z', endAt: '2026-11-16T15:00:00Z' }], tasks: [{ id: 'a', title: 'Math', durationMinutes: 90, priority: 2, kind: 'study' }, { id: 'b', title: 'Startup', durationMinutes: 90, priority: 1 }] });
     expect(result.blocks[0]?.sourceId).toBe('a');

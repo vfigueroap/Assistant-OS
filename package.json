@@ -4,35 +4,36 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": "26.x"
   },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
-    "dev:api": "tsx watch apps/api/dev.ts",
-    "build": "npm run build:web && npm run build:gym",
+    "dev": "node --env-file-if-exists=.env scripts/run.mjs dev",
+    "dev:web": "vite --config apps/web/vite.config.ts --host 127.0.0.1",
+    "dev:api": "node --env-file-if-exists=.env scripts/run.mjs api",
+    "start": "node --env-file-if-exists=.env scripts/serve.mjs",
+    "open": "node scripts/open.mjs",
+    "build": "npm run build:web && npm run build:api && npm run build:gym",
     "build:web": "vite build --config apps/web/vite.config.ts",
+    "build:api": "vite build --ssr apps/api/dev.ts --outDir dist/api --emptyOutDir",
     "build:gym": "node scripts/build-gym.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:gym": "node --test tests/gym/*.test.mjs",
     "test:e2e": "playwright test",
-    "worker": "tsx apps/worker/src/index.ts",
-    "setup": "tsx scripts/setup.ts",
-    "check": "npm run typecheck && npm test && npm run build",
-    "preview": "vite preview --config apps/web/vite.config.ts --host 127.0.0.1"
+    "worker": "node --env-file-if-exists=.env scripts/run.mjs worker",
+    "setup": "node --env-file-if-exists=.env scripts/run.mjs setup",
+    "check": "npm run typecheck && npm test && npm run test:gym && npm run build",
+    "preview": "node --env-file-if-exists=.env scripts/run.mjs preview"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.118",
     "@supabase/supabase-js": "2.119.0",
-    "@types/node": "26.6.6",
-    "@types/react": "19.3.0",
-    "@types/react-dom": "19.3.0",
     "ai": "7.0.173",
-    "eve": "1.0.0-rc.17",
     "lucide-react": "1.73.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -42,10 +43,11 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.16",
     "@playwright/test": "1.65.1",
-    "@vercel/node": "31.0.0",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
     "supabase": "3.1.0",
-    "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.0"

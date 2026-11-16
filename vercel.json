@@ -1,12 +1,15 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm ci --ignore-scripts",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build:web && npm run build:gym",
   "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/gym", "destination": "/gym/", "permanent": true }
+  ],
   "rewrites": [
-    {"source": "/gym/api/:gym*", "destination": "/api/index?gym=:gym*"},
-    {"source": "/api/:path*", "destination": "/api/index?path=:path*"},
-    {"source": "/gym", "destination": "/gym/index.html"},
-    {"source": "/gym/:rest*", "destination": "/gym/index.html"},
-    {"source": "/:path*", "destination": "/index.html"}
+    { "source": "/api/:path*", "destination": "/api/index?__route=/api/:path*" },
+    { "source": "/gym/api/:path*", "destination": "/api/index?__route=/gym/api/:path*" },
+    { "source": "/gym/", "destination": "/gym/index.html" },
+    { "source": "/((?!api/|gym/|web/).*)", "destination": "/web/index.html" }
   ]
 }

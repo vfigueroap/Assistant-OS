@@ -40,7 +40,11 @@ export function planWeek(input: PlanInput): PlanResult {
         const capacity = Math.floor((Math.min(window.end, deadline, midnight) - window.start) / 60_000);
         const dailyLeft = dailyMax - (workByDay.get(day) ?? 0);
         const amount = Math.min(remaining, capacity, maxBlock, dailyLeft);
-        if (amount < Math.min(15, remaining)) { window.start = Math.min(window.end, midnight); break; }
+        if (amount < Math.min(15, remaining)) {
+          if (Math.min(window.end, deadline) <= midnight) break;
+          window.start = midnight;
+          continue;
+        }
         const end = window.start + amount * 60_000;
         blocks.push({ sourceId: task.id, title: task.title, kind: task.kind ?? 'work', startAt: new Date(window.start).toISOString(), endAt: new Date(end).toISOString() });
         workByDay.set(day, (workByDay.get(day) ?? 0) + amount);

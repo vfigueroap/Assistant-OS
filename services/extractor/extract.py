@@ -1,6 +1,5 @@
 """Offline extraction. Original bytes are never executed or sent to a model."""
 from __future__ import annotations
-import csv
 import io
 import os
 import shutil
@@ -12,6 +11,7 @@ from pathlib import Path
 MAX_BYTES = 20 * 1024 * 1024
 MAX_TEXT = 1_000_000
 MAX_FRAGMENTS = 3000
+MAX_FRAGMENT_TEXT = 30000
 MAX_PAGES = 200
 
 
@@ -33,6 +33,7 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
     suffix = Path(filename).suffix.lower()
     fragments: list[dict] = []
     warnings: list[str] = []
+    pages_requiring_ocr: list[int] = []
     total = 0
 
     def add(text: str, **locator):
@@ -40,9 +41,11 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
         text = str(text).strip().replace("\x00", "")
         if not text:
             return
-        if total + len(text) > MAX_TEXT or len(fragments) >= MAX_FRAGMENTS:
+        count = (len(text) + MAX_FRAGMENT_TEXT - 1) // MAX_FRAGMENT_TEXT
+        if total + len(text) > MAX_TEXT or len(fragments) + count > MAX_FRAGMENTS:
             raise ValueError("extracted_content_limit")
-        fragments.append({"locator": locator, "text": text})
+        for start in range(0, len(text), MAX_FRAGMENT_TEXT):
+            fragments.append({"locator": locator, "text": text[start:start + MAX_FRAGMENT_TEXT]})
         total += len(text)
 
     if data.startswith(b"%PDF-"):
@@ -67,7 +70,7 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
                     with Image.open(str(destination) + ".png") as image:
                         add(pytesseract.image_to_string(image, lang=os.environ.get("OCR_LANGUAGES", "spa+eng"), timeout=12), page=number)
             else:
-                warnings.append(f"page_{number}_requires_ocr")
+                pages_requiring_ocr.append(number)
     elif data.startswith((b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")):
         from PIL import Image
         Image.MAX_IMAGE_PIXELS = 20_000_000
@@ -129,6 +132,8 @@ def extract(data: bytes, filename: str, mime: str = "") -> dict:
             add(line, line=number)
     else:
         raise ValueError("unsupported_or_mismatched_file_type")
+    if pages_requiring_ocr:
+        warnings.append("pages_require_ocr:" + ",".join(map(str, pages_requiring_ocr)))
     if not fragments:
         warnings.append("no_readable_text_do_not_infer_document_contents")
     return {"text": "\n\n".join(f["text"] for f in fragments), "fragments": fragments, "warnings": warnings}

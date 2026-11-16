@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "npm run worker --prefix ../..",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test ../../tests/worker/*.test.ts"
+    "test": "vitest run --root ../.. tests/backend/worker.test.ts"
   }
 }

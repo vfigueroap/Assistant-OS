@@ -1,82 +1,230 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom';
-import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
-import { Activity, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardList, CloudOff, FileText, FolderKanban, HeartPulse, LayoutDashboard, LogOut, Menu, Plus, Search, Settings2, ShieldCheck, Sparkles, Target, Upload, X } from 'lucide-react';
-import { parseMoney, summarizeFinance } from '@assistant-os/domain';
-import './style.css';
+import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import { kinds, putLocalRecord, readLocalRecords, recordSchema, safeReturnTo, storageKey, type PersonalRecord } from './records.js';
 
-type Row = { id: string; owner_id: string; kind: string; title: string; status: string; due_at: string | null; data: Record<string, unknown>; created_at: string };
-type Transaction = { id: string; owner_id: string; amount_minor: number | null; currency: string; direction: 'expense'|'income'|'refund'|'transfer'; kind: string; status: 'draft'|'confirmed'|'void'; settlement_status: string; merchant: string | null; description: string; category: string | null; occurred_at: string | null; evidence_id: string | null };
-type Document = { id: string; title: string; status: string; file_name: string | null; storage_path: string | null; created_at: string };
-type Evidence = { id: string; title: string; status: string; source: string; created_at: string };
-type Job = { id: string; kind: string; status: string; created_at: string; error?: string | null };
-type Action = { id: string; operation: string; payload_hash: string; payload: Record<string,unknown>; status: string; expires_at: string };
-type Data = { records: Row[]; transactions: Transaction[]; documents: Document[]; evidence: Evidence[]; jobs: Job[]; actions: Action[]; fragments: { id:string; document_id:string; text:string; locator:Record<string,unknown> }[]; budgets: {id:string;title:string;amount_minor:number;currency:string;period_start:string;period_end:string}[] };
-const empty: Data = { records: [], transactions: [], documents: [], evidence: [], jobs: [], actions: [], fragments: [], budgets: [] };
-const nav = [
-  ['/', 'Hoy', LayoutDashboard], ['/gym/', 'Gimnasio', Activity], ['/study', 'Estudios', BookOpen], ['/calendar', 'Calendario', CalendarDays], ['/finance', 'Finanzas', CircleDollarSign], ['/goals', 'Objetivos', Target], ['/knowledge', 'Conocimiento', FileText], ['/projects', 'Proyectos', FolderKanban], ['/system', 'Sistema', Settings2]
-] as const;
-const formatDate = (s?: string | null) => s ? new Intl.DateTimeFormat('es-CL',{dateStyle:'medium',timeZone:'America/Santiago'}).format(new Date(s)) : 'Sin fecha';
-const money = (n:number,c='CLP') => new Intl.NumberFormat('es-CL',{style:'currency',currency:c,maximumFractionDigits:c==='CLP'?0:2}).format(n/(c==='CLP'?1:100));
+type Connection = { mode: 'local' } | { mode: 'cloud'; client: SupabaseClient; session: Session | null };
+const columns = 'id,owner_id,kind,title,status,due_at,data,created_at,updated_at,deleted_at';
+const pageSize = 100;
+const localOnly = new URLSearchParams(location.search).get('local') === '1';
+const homeUrl = localOnly ? '/?local=1' : '/';
+const settingsUrl = localOnly ? '/settings?local=1' : '/settings';
+
 function App() {
-  const [client,setClient]=useState<SupabaseClient|null>(null); const [user,setUser]=useState<User|null>(null); const [owner,setOwner]=useState(false);
-  const [data,setData]=useState<Data>(empty); const [busy,setBusy]=useState(true); const [message,setMessage]=useState(''); const [menu,setMenu]=useState(false);
-  const [paused,setPaused]=useState(true); const [worker,setWorker]=useState<Record<string,unknown>|null>(null);
-  const [gymCount,setGymCount]=useState(0);
-  useEffect(()=>{ let alive=true; (async()=>{try { const config=await fetch('/api/config').then(r=>r.json()); if(!config.supabaseUrl||!config.supabasePublishableKey) throw new Error('Falta configurar Supabase en Vercel.'); const c=createClient(config.supabaseUrl,config.supabasePublishableKey,{auth:{storageKey:'assistant-os-auth',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}); if(!alive)return; setClient(c); const {data:{user:u}}=await c.auth.getUser(); if(alive)setUser(u); c.auth.onAuthStateChange((_event,session)=>{setUser(session?.user??null)}); }catch(e){if(alive)setMessage(String(e))}finally{if(alive)setBusy(false)}})();return()=>{alive=false}},[]);
-  const reload=async()=>{if(!client||!user)return;setBusy(true);try{const o=await client.rpc('is_workspace_owner');if(o.error)throw o.error;setOwner(Boolean(o.data));if(!o.data){setData(empty);return}const tables=['records','transactions','documents','financial_evidence','jobs','actions','fragments','budgets'] as const;const results=await Promise.all(tables.map(t=>client.from(t).select('*').eq('owner_id',user.id).order('created_at',{ascending:false}).limit(500)));for(const result of results)if(result.error)throw result.error;setData({records:results[0].data as Row[]||[],transactions:results[1].data as Transaction[]||[],documents:results[2].data as Document[]||[],evidence:results[3].data as Evidence[]||[],jobs:results[4].data as Job[]||[],actions:results[5].data as Action[]||[],fragments:results[6].data as Data['fragments']||[],budgets:results[7].data as Data['budgets']||[]});const settings=await client.rpc('get_workspace_settings');if(!settings.error)setPaused(Boolean(settings.data?.paused));const w=await client.rpc('ui_worker_status');if(!w.error)setWorker(w.data as Record<string,unknown>);const gym=await client.from('gym_profiles').select('workout_count').eq('owner_id',user.id).maybeSingle();if(!gym.error)setGymCount(Number(gym.data?.workout_count||0));}catch(e){setMessage(`No se pudieron cargar tus datos: ${String(e)}`)}finally{setBusy(false)}};
-  useEffect(()=>{void reload()},[client,user?.id]);
-  const ctx={client:client!,user:user!,data,reload,notify:setMessage,paused,setPaused,worker,gymCount};
-  if(user && window.location.pathname==='/login' && new URLSearchParams(window.location.search).get('returnTo')==='/gym/'){window.location.replace('/gym/');return null;}
-  if(busy&&!client)return <div className="loading"><Sparkles/> Abriendo Assistant OS…</div>;
-  if(!client)return <div className="loading error">{message||'La aplicación no está configurada.'}</div>;
-  if(!user)return <Login client={client} message={message}/>;
-  if(!owner)return <div className="onboarding"><ShieldCheck size={36}/><h1>Cuenta creada</h1><p>Tu usuario está autenticado, pero aún falta asignarlo como propietario del espacio.</p><code>{user.id}</code><p>Abre el editor SQL de Supabase y sigue el paso «Activar propietario» del README. Luego vuelve a cargar esta página.</p><button onClick={()=>void reload()}>Comprobar acceso</button><button className="ghost" onClick={()=>void client.auth.signOut()}>Cerrar sesión</button></div>;
-  return <BrowserRouter><div className="shell"><aside className={menu?'sidebar open':'sidebar'}><div className="brand"><span className="brandmark">A<span>·</span></span><div><strong>Assistant OS</strong><small>Tu espacio personal</small></div></div><nav>{nav.map(([to,label,Icon])=>to==='/gym/'?<a key={to} href={to}><Icon size={19}/>{label}<ChevronRight className="chevron" size={15}/></a>:<NavLink key={to} to={to} end={to==='/'} onClick={()=>setMenu(false)}><Icon size={19}/>{label}<ChevronRight className="chevron" size={15}/></NavLink>)}</nav><div className="sidebar-bottom"><div className="worker-state"><span className={worker?.online?'dot live':'dot'}/><div><strong>{worker?.online?'HP conectado':'HP desconectado'}</strong><small>Agentes y sincronización</small></div></div><button className="profile" onClick={()=>void client.auth.signOut()}><span>{user.email?.slice(0,1).toUpperCase()}</span><div><strong>Mi espacio</strong><small>{user.email}</small></div><LogOut size={16}/></button></div></aside><div className="main"><header><button className="iconbtn mobile" aria-label="Abrir menú" onClick={()=>setMenu(!menu)}><Menu/></button><div><span className="eyebrow">PERSONAL AI OS</span><h1>Tu día, con claridad.</h1></div><div className="header-right"><span className="date-pill">{new Intl.DateTimeFormat('es-CL',{weekday:'long',day:'numeric',month:'long',timeZone:'America/Santiago'}).format(new Date())}</span><span className={paused?'pause-pill':'running-pill'}>{paused?'Agentes en pausa':'Agentes activos'}</span></div></header>{message&&<div className="notice" role="alert">{message}<button onClick={()=>setMessage('')} aria-label="Cerrar"><X size={16}/></button></div>}<main><Routes><Route path="/" element={<Today {...ctx}/>} /><Route path="/study" element={<Study {...ctx}/>} /><Route path="/calendar" element={<Calendar {...ctx}/>} /><Route path="/finance" element={<Finance {...ctx}/>} /><Route path="/goals" element={<Goals {...ctx}/>} /><Route path="/knowledge" element={<Knowledge {...ctx}/>} /><Route path="/projects" element={<Projects {...ctx}/>} /><Route path="/system" element={<System {...ctx}/>} /><Route path="*" element={<Today {...ctx}/>} /></Routes></main></div></div></BrowserRouter>;
+  const [connection, setConnection] = useState<Connection>();
+  const [error, setError] = useState('');
+  const [records, setRecords] = useState<PersonalRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [more, setMore] = useState(false);
+  const [kind, setKind] = useState(new URLSearchParams(location.search).get('kind') ?? 'all');
+  const [editing, setEditing] = useState<PersonalRecord | null>(null);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('assistant-os-theme') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); }
+    catch { return 'light'; }
+  });
+  const titleInput = useRef<HTMLInputElement>(null);
+  const loadVersion = useRef(0);
+  const signingIn = useRef(false);
+  const settings = location.pathname === '/settings' || location.pathname === '/login';
+
+  useEffect(() => { if (editing) titleInput.current?.focus(); }, [editing]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('assistant-os-theme', theme); } catch { /* La elección sigue vigente durante esta sesión. */ }
+  }, [theme]);
+
+  useEffect(() => {
+    let active = true;
+    let unsubscribe: (() => void) | undefined;
+    async function connect() {
+      try {
+        if (localOnly) { setConnection({ mode: 'local' }); return; }
+        let url = import.meta.env.VITE_SUPABASE_URL;
+        let key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+        if (!url || !key) {
+          const response = await fetch('/api/config', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+          if (!response.ok) throw new Error('No se pudo comprobar la conexión. Inicia también la API local y vuelve a cargar.');
+          const config = await response.json();
+          url = config.supabaseUrl;
+          key = config.supabasePublishableKey;
+        }
+        if (!url && !key) {
+          if (active) setConnection({ mode: 'local' });
+          return;
+        }
+        if (!url || !key || key.startsWith('sb_secret_')) throw new Error('La configuración pública de conexión no es válida.');
+        const parsedUrl = new URL(url);
+        if (parsedUrl.username || parsedUrl.password || (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsedUrl.hostname)))) throw new Error('La conexión requiere HTTPS y una dirección sin credenciales.');
+        if (key.includes('.')) {
+          const payload = JSON.parse(atob(key.split('.')[1].replaceAll('-', '+').replaceAll('_', '/')));
+          if (payload.role !== 'anon') throw new Error('El navegador solo admite una clave pública.');
+        }
+        const { createClient } = await import('@supabase/supabase-js');
+        const client = createClient(url, key, { auth: { storageKey: 'assistant-os-auth', persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
+        const { data, error: sessionError } = await client.auth.getSession();
+        if (sessionError) throw new Error('No se pudo recuperar la sesión.');
+        let authVersion = 0;
+        async function activate(session: Session | null) {
+          const version = ++authVersion;
+          if (session) {
+            const owner = await client.rpc('is_workspace_owner');
+            if (!active || version !== authVersion) return;
+            if (owner.error) throw new Error('No se pudo comprobar el acceso a tu cuenta.');
+            if (owner.data !== true) {
+              await client.auth.signOut();
+              if (active) setError('Esta cuenta no es la propietaria del espacio.');
+              session = null;
+            }
+          }
+          if (active && version === authVersion) { setRecords([]); setConnection({ mode: 'cloud', client, session }); }
+        }
+        await activate(data.session);
+        const { data: listener } = client.auth.onAuthStateChange((event, session) => {
+          if (!active || event === 'INITIAL_SESSION' || (event === 'SIGNED_IN' && signingIn.current)) return;
+          setRecords([]);
+          // Auth callbacks run under a lock; verify ownership after that callback returns.
+          setTimeout(() => { void activate(session).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : 'No se pudo comprobar tu cuenta.'); }); }, 0);
+        });
+        unsubscribe = () => { listener.subscription.unsubscribe(); client.auth.stopAutoRefresh(); };
+        if (!active) unsubscribe();
+      } catch (cause) {
+        if (active) { setError(cause instanceof Error ? cause.message : 'No se pudo abrir el espacio personal.'); setLoading(false); }
+      }
+    }
+    void connect();
+    return () => { active = false; unsubscribe?.(); };
+  }, []);
+
+  async function load(append = false, clearError = true) {
+    if (!connection) return;
+    const version = ++loadVersion.current;
+    setLoading(true);
+    if (clearError) setError('');
+    try {
+      if (connection.mode === 'local') { setRecords(readLocalRecords(localStorage)); setMore(false); }
+      else if (connection.session) {
+        const offset = append ? records.length : 0;
+        const { data, error: queryError } = await connection.client.from('records').select(columns).order('created_at', { ascending: false }).order('id').range(offset, offset + pageSize - 1);
+        if (queryError) throw new Error('No se pudieron cargar los registros. Comprueba la conexión y los permisos de tu cuenta.');
+        if (version !== loadVersion.current) return;
+        const parsed = (data ?? []).map(value => recordSchema.parse(value));
+        setRecords(previous => append ? [...previous, ...parsed] : parsed); setMore(parsed.length === pageSize);
+      }
+    } catch (cause) { if (version === loadVersion.current) setError(connection.mode === 'local' ? 'No se pudieron leer los registros de este navegador. El contenido guardado no se modificó.' : cause instanceof Error ? cause.message : 'No se pudieron leer los registros.'); }
+    finally { if (version === loadVersion.current) setLoading(false); }
+  }
+
+  useEffect(() => {
+    void load(false, false);
+    function refresh(event: StorageEvent) { if (connection?.mode === 'local' && event.key === storageKey) void load(false, false); }
+    window.addEventListener('storage', refresh);
+    return () => { loadVersion.current++; window.removeEventListener('storage', refresh); };
+  }, [connection]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!connection || busy || loading) return;
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    if (!String(values.get('title') ?? '').trim()) { setError('Escribe un título antes de guardar.'); return; }
+    setBusy(true); setError('');
+    try {
+      const now = new Date().toISOString();
+      const due = String(values.get('due') ?? '');
+      const record = recordSchema.parse({ ...editing, id: editing?.id ?? crypto.randomUUID(), kind: values.get('kind'), title: values.get('title'), due_at: due ? new Date(due).toISOString() : null, status: editing?.status ?? 'active', data: editing?.data ?? {}, created_at: editing?.created_at ?? now, updated_at: now });
+      let saved = record;
+      if (connection.mode === 'cloud') {
+        if (!connection.session) throw new Error('Inicia sesión antes de guardar.');
+        const payload = { title: record.title, kind: record.kind, due_at: record.due_at };
+        const query = editing ? connection.client.from('records').update(payload).eq('id', record.id).eq('updated_at', editing.updated_at) : connection.client.from('records').insert({ ...payload, owner_id: connection.session.user.id });
+        const result = await query.select(columns).single();
+        if (result.error) throw new Error('No se pudo guardar. Tu texto sigue en el formulario.');
+        saved = recordSchema.parse(result.data);
+      }
+      const next = connection.mode === 'local'
+        ? await navigator.locks.request(storageKey, () => putLocalRecord(localStorage, saved, editing?.updated_at ?? null))
+        : editing ? records.map(item => item.id === saved.id ? saved : item) : [saved, ...records];
+      setRecords(next); setEditing(null); form.reset(); titleInput.current?.focus();
+    } catch (cause) { setError(cause instanceof Error && cause.name === 'QuotaExceededError' ? 'No hay espacio en este navegador. Tu texto sigue en el formulario.' : cause instanceof Error && !['ZodError', 'SyntaxError'].includes(cause.name) ? cause.message : 'No se pudo guardar el registro. Comprueba el título, la fecha y el almacenamiento.'); }
+    finally { setBusy(false); }
+  }
+
+  async function change(record: PersonalRecord, patch: Partial<Pick<PersonalRecord, 'status' | 'deleted_at'>>) {
+    if (!connection || busy) return;
+    setBusy(true); setError('');
+    try {
+      let updated = { ...record, ...patch, updated_at: new Date().toISOString() };
+      if (connection.mode === 'cloud') {
+        const result = await connection.client.from('records').update(patch).eq('id', record.id).eq('updated_at', record.updated_at).select(columns).single();
+        if (result.error) throw new Error('No se pudo actualizar. El registro se conserva.');
+        updated = recordSchema.parse(result.data);
+      }
+      const next = connection.mode === 'local'
+        ? await navigator.locks.request(storageKey, () => putLocalRecord(localStorage, updated, record.updated_at))
+        : records.map(item => item.id === record.id ? updated : item);
+      setRecords(next);
+      if (editing?.id === record.id) setEditing(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo actualizar el registro.'); }
+    finally { setBusy(false); }
+  }
+
+  function exportRecords() {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = `personal-os-${new Date().toISOString().slice(0, 10)}.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (connection?.mode !== 'cloud') return;
+    const values = new FormData(event.currentTarget); setBusy(true); setError('');
+    signingIn.current = true;
+    try {
+      const result = await connection.client.auth.signInWithPassword({ email: String(values.get('email')), password: String(values.get('password')) });
+      if (result.error) throw new Error('No se pudo iniciar sesión. Revisa tus datos y la conexión.');
+      const owner = await connection.client.rpc('is_workspace_owner');
+      if (owner.error || owner.data !== true) { await connection.client.auth.signOut(); throw new Error('Esta cuenta no es la propietaria del espacio.'); }
+      location.assign(safeReturnTo(new URLSearchParams(location.search).get('returnTo')));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'No se pudo iniciar sesión.'); }
+    finally { signingIn.current = false; setBusy(false); }
+  }
+
+  const signedIn = connection?.mode === 'cloud' && connection.session;
+  const canUseRecords = connection?.mode === 'local' || signedIn;
+  const visible = records.filter(record => !record.deleted_at && (kind === 'all' || record.kind === kind));
+
+  return <>
+    <a className="skip" href="#main">Ir al contenido</a>
+    <header className="header"><a className="brand" href={homeUrl}>Personal OS</a><nav aria-label="Principal"><a href={homeUrl} aria-current={!settings ? 'page' : undefined}>Registros</a><a href="/study">Herramientas</a><a href="/gym/">Gimnasio</a><a href={settingsUrl} aria-current={settings ? 'page' : undefined}>Conexión</a></nav><button type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Tema {theme === 'dark' ? 'claro' : 'oscuro'}</button></header>
+    <main id="main">
+      <div className="intro"><p className="date">{new Intl.DateTimeFormat('es-CL', { dateStyle: 'full' }).format(new Date())}</p><h1>{settings ? 'Tu conexión' : 'Lo que quieres hacer y recordar'}</h1><p>{connection?.mode === 'local' ? 'Modo local. Tus registros se guardan solo en este navegador; exporta una copia para conservarlos.' : signedIn ? 'Tu espacio personal conectado.' : 'Tareas, notas y fechas en un solo lugar.'}</p></div>
+      {error && <div className="error" role="alert"><p>{error}</p><button type="button" onClick={() => connection ? void load() : location.reload()} disabled={loading}>Volver a intentar</button></div>}
+      {!connection && !error && <p role="status">Abriendo tu espacio…</p>}
+      {settings && connection?.mode === 'local' && <section className="connection"><h2>Guardado en este equipo</h2><p>{localOnly ? 'Estás usando los registros de este navegador.' : 'No hay una cuenta configurada. Puedes usar tus registros sin iniciar sesión.'} El gimnasio y las automatizaciones requieren la conexión a tu espacio privado.</p><p>Los registros locales y los de la cuenta se conservan por separado.</p><a href={homeUrl}>Volver a mis registros</a>{localOnly && <p><a href="/login">Entrar a mi cuenta</a></p>}</section>}
+      {connection?.mode === 'cloud' && !signedIn && <section className="connection"><h2>Entrar a tu espacio</h2><form onSubmit={signIn}><label htmlFor="email">Correo</label><input id="email" name="email" type="email" autoComplete="username" required/><label htmlFor="password">Contraseña</label><input id="password" name="password" type="password" autoComplete="current-password" required/><button className="primary" disabled={busy} type="submit">{busy ? 'Entrando…' : 'Iniciar sesión'}</button></form><p><a href="/?local=1">Usar registros de este navegador</a></p></section>}
+      {settings && signedIn && <section className="connection"><h2>Sesión iniciada</h2><p>{signedIn.user.email}</p><p>Los registros se guardan en tu cuenta. El gimnasio comparte esta sesión.</p><button type="button" disabled={busy} onClick={async () => { if (connection?.mode !== 'cloud') return; setBusy(true); const result = await connection.client.auth.signOut(); if (result.error) setError('No se pudo cerrar la sesión. Inténtalo de nuevo.'); setBusy(false); }}>Cerrar sesión</button></section>}
+      {!settings && canUseRecords && <div className="workspace">
+        <section className="editor"><h2>{editing ? 'Editar registro' : 'Anotar algo'}</h2><form key={editing?.id ?? 'new'} onSubmit={save}>
+          <label htmlFor="title">Título</label><input ref={titleInput} id="title" name="title" defaultValue={editing?.title ?? ''} maxLength={1000} required placeholder="¿Qué quieres dejar anotado?"/>
+          <label htmlFor="kind">Tipo</label><select id="kind" name="kind" defaultValue={editing?.kind ?? 'task'}>{Object.entries(kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <label htmlFor="due">Fecha y hora (opcional)</label><input id="due" name="due" type="datetime-local" defaultValue={editing?.due_at ? new Date(new Date(editing.due_at).getTime() - new Date(editing.due_at).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''}/>
+          <button className="primary" disabled={busy || loading} type="submit">{busy ? 'Guardando…' : editing ? 'Guardar cambios' : 'Guardar registro'}</button>
+          {editing && <button type="button" onClick={() => setEditing(null)}>Cancelar edición</button>}
+        </form></section>
+        <section className="entries" aria-labelledby="entries-title"><div className="section-head"><h2 id="entries-title">Mis registros</h2><button type="button" disabled={loading || more || records.length === 0} onClick={exportRecords}>{more ? 'Carga todo para exportar' : 'Exportar copia'}</button></div><label htmlFor="filter">Mostrar</label><select id="filter" value={kind} onChange={event => setKind(event.target.value)}><option value="all">Todos los tipos</option>{Object.entries(kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          {loading && <p role="status">Cargando registros…</p>}
+          {!loading && !error && visible.length === 0 && <p className="empty">{records.some(record => !record.deleted_at) ? 'No hay registros de este tipo.' : 'Todavía no tienes registros. Anota el primero en el formulario.'}</p>}
+          <ul>{visible.map(record => <li key={record.id}><div className="record-copy"><p className="record-meta">{kinds[record.kind]} · {record.status === 'completed' ? 'Completado' : record.status === 'active' ? 'Activo' : record.status}</p><h3 className={record.status === 'completed' ? 'completed' : ''}>{record.title}</h3>{record.due_at && <time dateTime={record.due_at}>{new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(record.due_at))}</time>}</div><div className="record-actions">{record.kind === 'task' && <button type="button" disabled={busy} aria-label={`${record.status === 'completed' ? 'Reabrir' : 'Completar'} ${record.title}`} onClick={() => void change(record, { status: record.status === 'completed' ? 'active' : 'completed' })}>{record.status === 'completed' ? 'Reabrir' : 'Completar'}</button>}<button type="button" disabled={busy} aria-label={`Editar ${record.title}`} onClick={() => { setEditing(record); titleInput.current?.focus(); }}>Editar</button><button type="button" disabled={busy} aria-label={`Archivar ${record.title}`} onClick={() => void change(record, { deleted_at: new Date().toISOString() })}>Archivar</button></div></li>)}</ul>
+          {more && <button type="button" disabled={loading} onClick={() => void load(true)}>Cargar más registros</button>}
+          {records.some(record => record.deleted_at) && <details><summary>Archivados</summary><ul>{records.filter(record => record.deleted_at).map(record => <li key={record.id}><span>{record.title}</span><button type="button" disabled={busy} aria-label={`Restaurar ${record.title}`} onClick={() => void change(record, { deleted_at: null })}>Restaurar</button></li>)}</ul></details>}
+        </section>
+      </div>}
+    </main><footer className="footer">Personal OS · Un registro a la vez.</footer>
+  </>;
 }
-type Ctx={client:SupabaseClient;user:User;data:Data;reload:()=>Promise<void>;notify:(v:string)=>void;paused:boolean;setPaused:(v:boolean)=>void;worker:Record<string,unknown>|null;gymCount:number};
-function Login({client,message}:{client:SupabaseClient;message:string}) {const[email,setEmail]=useState('');const[password,setPassword]=useState('');const[register,setRegister]=useState(false);const[error,setError]=useState('');const[done,setDone]=useState(false);return <div className="auth-wrap"><div className="auth-intro"><div className="brandmark large">A<span>·</span></div><span className="eyebrow">ASSISTANT OS</span><h1>Todo lo importante,<br/>en un solo lugar.</h1><p>Organiza tu día, entrena, estudia y comprende tus finanzas. Tus datos permanecen en tu espacio privado.</p><div className="auth-foot"><ShieldCheck size={18}/> Acceso protegido con Supabase</div></div><form className="auth-card" onSubmit={async e=>{e.preventDefault();setError('');const result=register?await client.auth.signUp({email,password}):await client.auth.signInWithPassword({email,password});if(result.error)setError(result.error.message);else if(register)setDone(true);else if(new URLSearchParams(window.location.search).get('returnTo')==='/gym/')window.location.assign('/gym/')}}><span className="eyebrow">BIENVENIDO</span><h2>{register?'Crea tu cuenta':'Entra a tu espacio'}</h2><p>{register?'Después asigna el propietario desde Supabase.':'Continúa donde quedaste.'}</p><label>Correo electrónico<input type="email" value={email} onChange={e=>setEmail(e.target.value)} required autoComplete="email"/></label><label>Contraseña<input type="password" value={password} onChange={e=>setPassword(e.target.value)} required minLength={6} autoComplete={register?'new-password':'current-password'}/></label>{(error||message)&&<div className="form-error">{error||message}</div>}{done&&<div className="form-success">Revisa tu correo si Supabase solicita confirmar la cuenta.</div>}<button className="primary">{register?'Crear cuenta':'Entrar'} <ArrowRight size={18}/></button><button type="button" className="textbtn" onClick={()=>{setRegister(!register);setError('')}}>{register?'Ya tengo cuenta':'Crear una cuenta'}</button></form></div>}
-function Title({label,subtitle,action}:{label:string;subtitle?:string;action?:React.ReactNode}){return <div className="section-title"><div><h2>{label}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>}
-function Blank({icon:Icon,title,detail}:{icon:typeof FileText;title:string;detail:string}){return <div className="blank"><Icon size={26}/><strong>{title}</strong><p>{detail}</p></div>}
-function RecordForm({ctx,kind,button='Agregar',placeholder='Título'}:{ctx:Ctx;kind:Row['kind'];button?:string;placeholder?:string}){const[title,setTitle]=useState('');const[due,setDue]=useState('');const[open,setOpen]=useState(false);return <><button className="button" onClick={()=>setOpen(!open)}><Plus size={16}/>{button}</button>{open&&<form className="inline-form" onSubmit={async e=>{e.preventDefault();const r=await ctx.client.from('records').insert({owner_id:ctx.user.id,kind,title:title.trim(),due_at:due||null,data:{},status:'active'});if(r.error)ctx.notify(r.error.message);else{setTitle('');setDue('');setOpen(false);await ctx.reload()}}}><input autoFocus value={title} onChange={e=>setTitle(e.target.value)} placeholder={placeholder} required/><input type="datetime-local" value={due} onChange={e=>setDue(e.target.value)}/><button className="primary">Guardar</button></form>}</>}
-function RecordList({ctx,kinds,limit}:{ctx:Ctx;kinds:string[];limit?:number}){const rows=ctx.data.records.filter(r=>kinds.includes(r.kind)&&!r.status.includes('done')).slice(0,limit??100);return rows.length?<div className="list">{rows.map(r=><div className="list-row" key={r.id}><button className="check" title="Marcar como hecho" onClick={async()=>{const x=await ctx.client.from('records').update({status:'done'}).eq('id',r.id).eq('owner_id',ctx.user.id);if(x.error)ctx.notify(x.error.message);else await ctx.reload()}}><Check size={14}/></button><div><strong>{r.title}</strong><small>{r.kind==='task'?'Tarea':r.kind==='event'?'Evento':r.kind==='goal'?'Objetivo':r.kind}</small></div><span className="muted">{formatDate(r.due_at)}</span></div>)}</div>:<Blank icon={ClipboardList} title="Todo al día" detail="Agrega tu primer elemento para empezar."/>}
-function Today(ctx:Ctx){const tasks=ctx.data.records.filter(r=>r.kind==='task'&&r.status!=='done');const events=ctx.data.records.filter(r=>r.kind==='event'&&r.status!=='cancelled');const drafts=ctx.data.transactions.filter(t=>t.status==='draft');const pending=ctx.data.actions.filter(a=>a.status==='proposed');return <><section className="hero"><div><span className="eyebrow">RESUMEN PERSONAL</span><h2>Un paso a la vez.<br/><em>Todo en su lugar.</em></h2><p>Tu espacio reúne las decisiones y avances que importan hoy.</p><Link className="hero-link" to="/calendar">Ver calendario <ArrowRight size={16}/></Link></div><div className="hero-graphic"><span>✳</span></div></section><div className="stat-grid"><Link to="/calendar" className="stat"><span className="stat-icon olive"><ClipboardList/></span><small>Tareas pendientes</small><strong>{tasks.length}</strong><span>Organiza tus prioridades <ArrowRight size={14}/></span></Link><Link to="/calendar" className="stat"><span className="stat-icon blue"><CalendarDays/></span><small>Eventos guardados</small><strong>{events.length}</strong><span>Consulta tu agenda <ArrowRight size={14}/></span></Link><Link to="/finance" className="stat"><span className="stat-icon amber"><CircleDollarSign/></span><small>Gastos por revisar</small><strong>{drafts.length}</strong><span>Revisa movimientos <ArrowRight size={14}/></span></Link><Link to="/system" className="stat"><span className="stat-icon peach"><ShieldCheck/></span><small>Acciones pendientes</small><strong>{pending.length}</strong><span>Controla tus agentes <ArrowRight size={14}/></span></Link></div><div className="two-col"><section className="panel"><Title label="Prioridades" subtitle="Tareas que esperan por ti" action={<RecordForm ctx={ctx} kind="task" button="Nueva tarea"/>}/><RecordList ctx={ctx} kinds={['task']} limit={5}/></section><section className="panel"><Title label="Próximos eventos" subtitle="Tu agenda sincronizada y personal" action={<Link to="/calendar" className="textlink">Ver todo <ArrowRight size={14}/></Link>}/>{events.length?<div className="list">{events.slice(0,5).map(r=><div className="event-row" key={r.id}><span className="event-day">{r.due_at?new Date(r.due_at).getDate():'—'}</span><div><strong>{r.title}</strong><small>{formatDate(r.due_at)}</small></div></div>)}</div>:<Blank icon={CalendarDays} title="Agenda despejada" detail="Crea un evento o sincroniza tu calendario."/>}</section></div><div className="quick-grid"><a href="/gym/" className="quick"><Activity/><strong>Gimnasio virtual</strong><span>{ctx.gymCount} sesiones registradas; rutinas y progreso</span><ArrowRight size={16}/></a><Link to="/study" className="quick"><BookOpen/><strong>Estudios</strong><span>Documentos y repasos</span><ArrowRight size={16}/></Link><Link to="/finance" className="quick"><CircleDollarSign/><strong>Finanzas</strong><span>Movimientos y boletas</span><ArrowRight size={16}/></Link></div></>}
-function Calendar(ctx:Ctx){const events=ctx.data.records.filter(r=>(r.kind==='event'||r.kind==='task')&&r.status!=='cancelled').sort((a,b)=>(a.due_at||'z').localeCompare(b.due_at||'z'));return <section className="panel full"><Title label="Calendario" subtitle="Compromisos, tareas y bloques de tiempo" action={<RecordForm ctx={ctx} kind="event" button="Nuevo evento" placeholder="Nombre del evento"/>}/>{events.length?<div className="list">{events.map(r=><div className="calendar-row" key={r.id}><div className="calendar-date"><strong>{r.due_at?new Date(r.due_at).getDate():'—'}</strong><small>{r.due_at?new Intl.DateTimeFormat('es-CL',{month:'short'}).format(new Date(r.due_at)):'sin fecha'}</small></div><div><strong>{r.title}</strong><small>{r.kind==='event'?'Evento':'Tarea'} · {formatDate(r.due_at)}</small></div><span className="tag">{r.status}</span></div>)}</div>:<Blank icon={CalendarDays} title="Sin eventos todavía" detail="Crea uno aquí o conecta Google Calendar desde el HP."/>}</section>}
-function Goals(ctx:Ctx){return <div className="two-col"><section className="panel"><Title label="Objetivos" subtitle="Lo que quieres lograr" action={<RecordForm ctx={ctx} kind="goal" button="Nuevo objetivo"/>}/><RecordList ctx={ctx} kinds={['goal']}/></section><section className="panel"><Title label="Proyectos personales" subtitle="Trabajo en curso" action={<RecordForm ctx={ctx} kind="project" button="Nuevo proyecto"/>}/><RecordList ctx={ctx} kinds={['project']}/></section></div>}
-function Projects(ctx:Ctx){return <section className="panel full"><Title label="Proyectos" subtitle="Ideas, repositorios y próximos pasos" action={<RecordForm ctx={ctx} kind="project" button="Nuevo proyecto"/>}/><RecordList ctx={ctx} kinds={['project']}/></section>}
-function Study(ctx:Ctx){const[uploading,setUploading]=useState(false);const[query,setQuery]=useState('');const docs=ctx.data.documents;const fragments=ctx.data.fragments.filter(f=>query.length>2&&f.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())).slice(0,30);return <><section className="panel full"><Title label="Estudios" subtitle="Materiales con citas que puedes comprobar" action={<label className="button upload"><Upload size={16}/> Subir material<input type="file" hidden accept=".pdf,.txt,.csv,.docx,.pptx,.xlsx,image/png,image/jpeg" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>50*1024*1024){ctx.notify('El archivo supera 50 MB. Impórtalo desde el HP.');return}setUploading(true);try{const id=crypto.randomUUID();const path=`${ctx.user.id}/documents/${id}/${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await ctx.client.storage.from('personal-files').upload(path,f,{upsert:false});if(up.error)throw up.error;const row=await ctx.client.from('documents').insert({id,owner_id:ctx.user.id,title:f.name,file_name:f.name,mime:f.type||'application/octet-stream',storage_path:path,size_bytes:f.size});if(row.error)throw row.error;const job=await ctx.client.rpc('enqueue_job',{p_kind:'document.extract',p_payload:{document_id:id},p_idempotency_key:`document:${id}`});if(job.error)throw job.error;await ctx.reload()}catch(err){ctx.notify(String(err))}finally{setUploading(false)}}}/></label>}/>{uploading&&<p>Subiendo archivo…</p>}{docs.length?<div className="list">{docs.map(d=><div className="list-row" key={d.id}><FileText size={20}/><div><strong>{d.title}</strong><small>{formatDate(d.created_at)}</small></div><span className="tag">{d.status}</span></div>)}</div>:<Blank icon={BookOpen} title="Tu biblioteca comienza aquí" detail="Sube un material para generar extractos y consultar sus fuentes."/>}</section><section className="panel full"><Title label="Buscar en materiales" subtitle="Cada resultado conserva su documento y localizador"/><div className="search"><Search size={18}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Busca un tema o concepto"/></div>{fragments.map(f=><div className="fragment" key={f.id}><strong>{docs.find(d=>d.id===f.document_id)?.title||'Documento'} · {Object.entries(f.locator||{}).map(([k,v])=>`${k} ${v}`).join(', ')||'Fragmento'}</strong><p>{f.text.slice(0,450)}</p></div>)}{query.length>2&&!fragments.length&&<p className="muted">No hay coincidencias en los materiales indexados.</p>}</section><section className="panel full"><Title label="Cursos y evaluaciones" subtitle="Planifica asignaturas, pruebas y repasos" action={<RecordForm ctx={ctx} kind="course" button="Nuevo curso"/>}/><RecordList ctx={ctx} kinds={['course','assessment','topic']}/></section></>}
-function Knowledge(ctx:Ctx){return <div className="two-col"><section className="panel"><Title label="Notas" subtitle="Ideas y recuerdos declarados" action={<RecordForm ctx={ctx} kind="note" button="Nueva nota"/>}/><RecordList ctx={ctx} kinds={['note','decision']}/></section><section className="panel"><Title label="Contactos" subtitle="Solo los que autorices" action={<RecordForm ctx={ctx} kind="contact" button="Nuevo contacto"/>}/><RecordList ctx={ctx} kinds={['contact']}/></section></div>}
-function Finance(ctx:Ctx){const[open,setOpen]=useState(false);const[amount,setAmount]=useState('');const[currency,setCurrency]=useState('CLP');const[kind,setKind]=useState('purchase');const[merchant,setMerchant]=useState('');const[category,setCategory]=useState('');const[uploading,setUploading]=useState(false);const summary=summarizeFinance(ctx.data.transactions.filter(t=>t.amount_minor!==null).map(t=>({id:t.id,amountMinor:Number(t.amount_minor),currency:t.currency,direction:t.direction,status:t.status,category:t.category||undefined})),currency);return <><div className="finance-head"><div><span className="eyebrow">TU PANORAMA</span><h2>Finanzas</h2><p>Movimientos claros, con evidencia y revisión.</p></div><button className="primary" onClick={()=>setOpen(!open)}><Plus size={16}/> Registrar movimiento</button></div><div className="stat-grid finance-stats"><div className="stat"><span className="stat-icon olive"><CircleDollarSign/></span><small>Gastos confirmados</small><strong>{money(summary.netExpenseMinor,currency)}</strong><span>Sin transferencias propias</span></div><div className="stat"><span className="stat-icon blue"><ArrowRight/></span><small>Ingresos confirmados</small><strong>{money(summary.incomeMinor,currency)}</strong><span>Solo {currency}</span></div><div className="stat"><span className="stat-icon amber"><ClipboardList/></span><small>Borradores</small><strong>{summary.draftCount}</strong><span>Por revisar</span></div><div className="stat"><span className="stat-icon peach"><FileText/></span><small>Boletas</small><strong>{ctx.data.evidence.length}</strong><span>Conservadas como evidencia</span></div></div>{open&&<form className="panel form-grid" onSubmit={async e=>{e.preventDefault();try{const minor=parseMoney(amount,currency);if(minor<0)throw Error('Ingresa un importe positivo');const direction=kind==='income'?'income':kind==='refund'?'refund':kind==='transfer'||kind==='card_payment'?'transfer':'expense';const r=await ctx.client.from('transactions').insert({owner_id:ctx.user.id,amount_minor:minor,currency,kind,direction,merchant,description:merchant,category:category||null,status:'confirmed',settlement_status:'unknown',occurred_at:new Date().toISOString()});if(r.error)throw r.error;setAmount('');setMerchant('');setOpen(false);await ctx.reload()}catch(err){ctx.notify(String(err))}}}><label>Tipo<select value={kind} onChange={e=>setKind(e.target.value)}><option value="purchase">Compra</option><option value="income">Ingreso</option><option value="refund">Devolución</option><option value="transfer">Transferencia propia</option><option value="card_payment">Pago de tarjeta</option><option value="fee">Comisión</option></select></label><label>Importe<input value={amount} onChange={e=>setAmount(e.target.value)} placeholder={currency==='CLP'?'10.990':'10.99'} required/></label><label>Moneda<select value={currency} onChange={e=>setCurrency(e.target.value)}><option>CLP</option><option>USD</option><option>EUR</option></select></label><label>Comercio o descripción<input value={merchant} onChange={e=>setMerchant(e.target.value)} required/></label><label>Categoría<input value={category} onChange={e=>setCategory(e.target.value)} placeholder="Alimentación"/></label><button className="primary">Guardar movimiento</button></form>}<div className="two-col"><section className="panel"><Title label="Movimientos" subtitle="Cada moneda se muestra por separado" action={<select value={currency} onChange={e=>setCurrency(e.target.value)}><option>CLP</option><option>USD</option><option>EUR</option></select>}/>{ctx.data.transactions.length?<div className="list">{ctx.data.transactions.map(t=><div className="transaction" key={t.id}><span className="transaction-icon"><CircleDollarSign size={18}/></span><div><strong>{t.merchant||t.description||t.kind}</strong><small>{t.category||t.kind} · {formatDate(t.occurred_at)}</small></div><div className="transaction-end"><strong>{money(Number(t.amount_minor||0),t.currency)}</strong><small>{t.status==='draft'?'Revisar':t.settlement_status}</small></div><DraftReview ctx={ctx} transaction={t}/></div>)}</div>:<Blank icon={CircleDollarSign} title="Sin movimientos" detail="Registra un movimiento o envía una boleta por Telegram."/>}</section><section className="panel"><Title label="Boletas y comprobantes" subtitle="La extracción crea un borrador revisable" action={<label className="button upload"><Upload size={16}/> Subir boleta<input type="file" hidden accept="image/jpeg,image/png,application/pdf" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;if(f.size>20*1024*1024){ctx.notify('Boleta demasiado grande. Máximo 20 MB.');return}setUploading(true);try{const id=crypto.randomUUID(),path=`${ctx.user.id}/captures/${id}/${f.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;const up=await ctx.client.storage.from('personal-files').upload(path,f);if(up.error)throw up.error;const row=await ctx.client.from('financial_evidence').insert({id,owner_id:ctx.user.id,title:f.name,source:'upload',mime:f.type,storage_path:path,size_bytes:f.size});if(row.error)throw row.error;const job=await ctx.client.rpc('enqueue_job',{p_kind:'finance.extract',p_payload:{evidence_id:id},p_idempotency_key:`finance:${id}`});if(job.error)throw job.error;await ctx.reload()}catch(err){ctx.notify(String(err))}finally{setUploading(false)}}}/></label>}/>{uploading&&<p>Subiendo boleta…</p>}{ctx.data.evidence.length?<div className="list">{ctx.data.evidence.map(e=><div className="list-row" key={e.id}><FileText size={19}/><div><strong>{e.title}</strong><small>{e.source} · {formatDate(e.created_at)}</small></div><span className="tag">{e.status}</span></div>)}</div>:<Blank icon={FileText} title="Aún no hay boletas" detail="Sube una imagen o PDF, o envíala al bot autorizado."/>}</section></div><section className="panel full"><Title label="Presupuestos" action={<BudgetForm ctx={ctx}/>} subtitle="Límites manuales por período y moneda"/>{ctx.data.budgets.length?ctx.data.budgets.map(b=><div className="list-row" key={b.id}><Target size={18}/><strong>{b.title}</strong><span>{money(b.amount_minor,b.currency)}</span></div>):<Blank icon={Target} title="Sin presupuestos definidos" detail="Podrás comparar categorías cuando configures un presupuesto."/>}</section></>}
-function System(ctx:Ctx){const[working,setWorking]=useState(false);return <><div className="system-grid"><section className="panel"><Title label="Control de agentes" subtitle="Detén nuevos trabajos y acciones externas"/><div className="system-status"><span className={ctx.paused?'status-big paused':'status-big live'}>{ctx.paused?<CloudOff/>:<HeartPulse/>}</span><div><strong>{ctx.paused?'Ejecución pausada':'Ejecución activa'}</strong><p>{ctx.paused?'Tus datos y el gimnasio siguen disponibles.':'El HP puede reclamar trabajos autorizados.'}</p></div></div><button className={ctx.paused?'primary':'button danger'} disabled={working} onClick={async()=>{setWorking(true);const r=await ctx.client.rpc('set_execution_paused',{p_paused:!ctx.paused});if(r.error)ctx.notify(r.error.message);else ctx.setPaused(!ctx.paused);setWorking(false)}}>{ctx.paused?'Reanudar agentes':'Pausar agentes'}</button></section><section className="panel"><Title label="Estado del HP" subtitle="Conectividad del worker"/><div className="system-status"><span className={ctx.worker?.online?'status-big live':'status-big paused'}><Activity/></span><div><strong>{ctx.worker?.online?'Conectado':'Sin conexión reciente'}</strong><p>Los trabajos permanecen en cola hasta que el HP vuelva.</p></div></div><small className="muted">Último contacto: {String(ctx.worker?.last_seen_at||'Sin datos')}</small></section></div><div className="two-col"><section className="panel"><Title label="Trabajos" subtitle="Procesamiento y sincronizaciones"/>{ctx.data.jobs.length?<div className="list">{ctx.data.jobs.slice(0,20).map(j=><div className="list-row" key={j.id}><Sparkles size={18}/><div><strong>{j.kind}</strong><small>{formatDate(j.created_at)}</small></div><span className="tag">{j.status}</span></div>)}</div>:<Blank icon={Sparkles} title="Sin trabajos" detail="Se crearán al subir materiales o solicitar una sincronización."/>}</section><section className="panel"><Title label="Aprobaciones" subtitle="Acciones externas que requieren tu decisión"/>{ctx.data.actions.filter(a=>a.status==='proposed').length?<div className="list">{ctx.data.actions.filter(a=>a.status==='proposed').map(a=><div className="approval" key={a.id}><strong>{a.operation}</strong><p>{JSON.stringify(a.payload)}</p><small>Vence {formatDate(a.expires_at)}</small><button className="primary" onClick={async()=>{const r=await ctx.client.rpc('approve_action',{p_id:a.id,p_hash:a.payload_hash});if(r.error)ctx.notify(r.error.message);else await ctx.reload()}}>Aprobar esta acción</button></div>)}</div>:<Blank icon={ShieldCheck} title="Sin acciones pendientes" detail="Las invitaciones, cancelaciones y cambios externos aparecerán aquí."/>}</section></div><AgentRequests ctx={ctx}/><section className="panel full"><Title label="Conectores" subtitle="Se configuran en el HP con autorización de cada servicio"/><div className="connector-grid">{['Google Calendar','Gmail (solo lectura)','Telegram','Garmin','GitHub','WhatsApp'].map(x=><div key={x} className="connector"><span className="dot"/><strong>{x}</strong><small>Revisar en el HP</small></div>)}</div><p className="muted">Las autorizaciones no se infieren de esta pantalla. Consulta el README para activarlas.</p></section></>}
-function DraftReview({ctx,transaction:t}:{ctx:Ctx;transaction:Transaction}) {
-  const [open,setOpen]=useState(false); const [amount,setAmount]=useState(t.amount_minor===null?'':String(t.amount_minor/(t.currency==='CLP'?1:100)));
-  const [merchant,setMerchant]=useState(t.merchant||''); const [date,setDate]=useState(t.occurred_at?.slice(0,10)||new Date().toISOString().slice(0,10));
-  const [kind,setKind]=useState(t.kind);
-  const [similar,setSimilar]=useState<string[]>([]);
-  if(t.status!=='draft')return null;
-  const confirm=async(allowSimilar:boolean)=>{try{
-    const value=parseMoney(amount,t.currency);
-    const direction=kind==='income'?'income':kind==='refund'?'refund':kind==='transfer'||kind==='card_payment'?'transfer':'expense';
-    const classification=await ctx.client.from('transactions').update({kind,direction}).eq('id',t.id).eq('owner_id',ctx.user.id).eq('status','draft');
-    if(classification.error)throw classification.error;
-    const r=await ctx.client.rpc('confirm_financial_draft',{p_transaction_id:t.id,p_amount_minor:value,p_merchant:merchant,p_occurred_at:new Date(`${date}T12:00:00`).toISOString(),p_allow_similar:allowSimilar});
-    if(r.error)throw r.error;
-    if(r.data?.status==='similar'){setSimilar(r.data.candidate_ids||[]);return}
-    setSimilar([]);setOpen(false);await ctx.reload();
-  }catch(err){ctx.notify(String(err))}};
-  return <div className="draft-review"><button className="button" onClick={()=>setOpen(!open)}>Revisar</button>{open&&<form className="inline-form" onSubmit={e=>{e.preventDefault();void confirm(false)}}><select aria-label="Tipo de movimiento" value={kind} onChange={e=>{setKind(e.target.value);setSimilar([])}}><option value="purchase">Compra</option><option value="income">Ingreso</option><option value="refund">Devolución</option><option value="transfer">Transferencia propia</option><option value="card_payment">Pago de tarjeta</option><option value="fee">Comisión</option></select><input aria-label="Importe" value={amount} onChange={e=>{setAmount(e.target.value);setSimilar([])}} required/><input aria-label="Comercio" value={merchant} onChange={e=>{setMerchant(e.target.value);setSimilar([])}}/><input aria-label="Fecha" type="date" value={date} onChange={e=>{setDate(e.target.value);setSimilar([])}} required/>{similar.length>0&&<div className="duplicate-warning" role="alert">Ya hay {similar.length} movimiento(s) confirmado(s) con el mismo importe, comercio y fecha cercana. Revisa el historial antes de sumarlo otra vez.<button type="button" className="button" onClick={()=>void confirm(true)}>Es otra compra, confirmar igualmente</button></div>}<button className="primary">Confirmar</button><button type="button" className="button danger" onClick={async()=>{const r=await ctx.client.from('transactions').update({status:'void'}).eq('id',t.id).eq('owner_id',ctx.user.id);if(r.error)ctx.notify(r.error.message);else await ctx.reload()}}>Duplicado / descartar</button></form>}</div>;
-}
-function BudgetForm({ctx}:{ctx:Ctx}){const[open,setOpen]=useState(false);const[title,setTitle]=useState('');const[amount,setAmount]=useState('');const[currency,setCurrency]=useState('CLP');return <><button className="button" onClick={()=>setOpen(!open)}><Plus size={16}/> Nuevo presupuesto</button>{open&&<form className="inline-form" onSubmit={async e=>{e.preventDefault();try{const now=new Date();const first=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)).toISOString().slice(0,10);const last=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,0)).toISOString().slice(0,10);const r=await ctx.client.from('budgets').insert({owner_id:ctx.user.id,title,amount_minor:parseMoney(amount,currency),currency,period_start:first,period_end:last,month:first});if(r.error)throw r.error;setOpen(false);setTitle('');setAmount('');await ctx.reload()}catch(err){ctx.notify(String(err))}}}><input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Nombre" required/><input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Límite" required/><select value={currency} onChange={e=>setCurrency(e.target.value)}><option>CLP</option><option>USD</option><option>EUR</option></select><button className="primary">Guardar</button></form>}</>}
-function AgentRequests({ctx}:{ctx:Ctx}){
-  const [calendarId,setCalendarId]=useState('');const [repo,setRepo]=useState('');const [start,setStart]=useState('');const [end,setEnd]=useState('');const [metric,setMetric]=useState('');const [value,setValue]=useState('');const [unit,setUnit]=useState('');const [sending,setSending]=useState(false);
-  const queue=async(kind:string,payload:Record<string,unknown>)=>{setSending(true);try{const r=await ctx.client.rpc('enqueue_job',{p_kind:kind,p_payload:payload,p_idempotency_key:`ui:${kind}:${crypto.randomUUID()}`});if(r.error)throw r.error;ctx.notify('Solicitud guardada. El HP la procesará cuando esté conectado y los agentes estén activos.');await ctx.reload()}catch(e){ctx.notify(String(e))}finally{setSending(false)}};
-  return <section className="panel full"><Title label="Solicitar trabajo" subtitle="Las solicitudes esperan en Supabase cuando el HP está apagado"/><div className="request-grid"><form onSubmit={e=>{e.preventDefault();void queue('calendar.sync',{connection_id:calendarId.trim(),provider:'google'})}}><strong>Google Calendar</strong><p>Lee el calendario autorizado en el HP.</p><input value={calendarId} onChange={e=>setCalendarId(e.target.value)} placeholder="ID de conexión, por ejemplo personal" required/><button className="button" disabled={sending}>Sincronizar</button></form><form onSubmit={e=>{e.preventDefault();void queue('projects.sync',{repositories:repo.split(',').map(x=>x.trim()).filter(Boolean)})}}><strong>Repositorios</strong><p>Consulta los proyectos permitidos.</p><input value={repo} onChange={e=>setRepo(e.target.value)} placeholder="usuario/repositorio" required/><button className="button" disabled={sending}>Actualizar proyectos</button></form><form onSubmit={e=>{e.preventDefault();if(new Date(end)<=new Date(start)){ctx.notify('El final debe ser posterior al inicio.');return}void queue('planner.week',{availability:[{startAt:new Date(start).toISOString(),endAt:new Date(end).toISOString()}]})}}><strong>Planificar un bloque</strong><p>Selecciona una ventana libre real, respetando descanso y compromisos.</p><input type="datetime-local" aria-label="Inicio libre" value={start} onChange={e=>setStart(e.target.value)} required/><input type="datetime-local" aria-label="Fin libre" value={end} onChange={e=>setEnd(e.target.value)} required/><button className="button" disabled={sending}>Proponer plan</button></form><form onSubmit={e=>{e.preventDefault();const numeric=Number(value);if(!Number.isFinite(numeric)){ctx.notify('Valor inválido');return}void queue('fitness.sync',{source:'manual',metrics:[{name:metric.trim(),value:numeric,unit:unit.trim(),observed_at:new Date().toISOString()}]})}}><strong>Métrica manual</strong><p>Guarda una observación con unidad y fecha, sin interpretarla como diagnóstico.</p><input value={metric} onChange={e=>setMetric(e.target.value)} placeholder="Nombre" required/><input value={value} onChange={e=>setValue(e.target.value)} placeholder="Valor" required/><input value={unit} onChange={e=>setUnit(e.target.value)} placeholder="Unidad" required/><button className="button" disabled={sending}>Registrar métrica</button></form></div><button className="textbtn" disabled={sending} onClick={()=>void queue('life.organize',{request:'Preparar propuestas de organización sin modificar originales'})}>Proponer organización de mis registros</button><SchedulePanel ctx={ctx} calendarId={calendarId}/></section>
-}
-function SchedulePanel({ctx,calendarId}:{ctx:Ctx;calendarId:string}){
-  const [items,setItems]=useState<Array<{id:string;title:string;kind:string;interval_minutes:number;enabled:boolean;next_run_at:string}>>([]);const [hours,setHours]=useState(24);
-  const load=async()=>{const r=await ctx.client.from('schedules').select('id,title,kind,interval_minutes,enabled,next_run_at').eq('owner_id',ctx.user.id).order('created_at',{ascending:false});if(!r.error)setItems(r.data||[])};
-  useEffect(()=>{void load()},[ctx.user.id]);
-  return <div className="schedules"><h3>Sincronización programada</h3><p>El calendario autorizado puede generar un trabajo a intervalos. El HP lo procesará cuando esté disponible.</p><div className="inline-form"><select value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={1}>Cada hora</option><option value={6}>Cada 6 horas</option><option value={24}>Cada día</option></select><button className="button" disabled={!calendarId.trim()} onClick={async()=>{const r=await ctx.client.from('schedules').insert({owner_id:ctx.user.id,title:`Calendario ${calendarId.trim()}`,kind:'calendar.sync',payload:{connection_id:calendarId.trim(),provider:'google'},interval_minutes:hours*60,next_run_at:new Date(Date.now()+60000).toISOString(),enabled:true});if(r.error)ctx.notify(r.error.message);else await load()}}>Programar calendario</button></div>{items.map(item=><div className="list-row" key={item.id}><CalendarDays size={17}/><div><strong>{item.title}</strong><small>Cada {item.interval_minutes/60} h · próximo {formatDate(item.next_run_at)}</small></div><button className="button" onClick={async()=>{const r=await ctx.client.from('schedules').update({enabled:!item.enabled}).eq('id',item.id).eq('owner_id',ctx.user.id);if(r.error)ctx.notify(r.error.message);else await load()}}>{item.enabled?'Pausar':'Activar'}</button></div>)}</div>
-}
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+
+if (['/study', '/calendar', '/finance', '/goals', '/knowledge', '/projects', '/system'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'))) {
+  void import('./workspace/main.js');
+} else void import('./style.css').then(() => createRoot(document.getElementById('root')!).render(<App/>));

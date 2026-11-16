@@ -59,11 +59,16 @@ export function createGymFetch({
 } = {}) {
   const base = apiBase.replace(/\/$/, '')
 
-  async function send(url, init = {}) {
-    const target = new URL(url, origin)
+  function apiUrl(input) {
+    const target = new URL(input, origin)
     if (target.origin !== origin || !(target.pathname === base || target.pathname.startsWith(base + '/'))) {
       throw new Error('Refusing to send the shared session outside the gym API')
     }
+    return target
+  }
+
+  async function send(url, init = {}) {
+    const target = apiUrl(url)
     const token = await getAccessToken()
     const headers = new Headers(init.headers)
     if (token) headers.set('authorization', 'Bearer ' + token)
@@ -112,7 +117,7 @@ export function createGymFetch({
   }
 
   return async function gymFetch(input, init = {}) {
-    const url = new URL(input, origin)
+    const url = apiUrl(input)
     const method = (init.method || 'GET').toUpperCase()
     if (url.pathname === `${base}/data` && method === 'PUT' && typeof init.body === 'string') {
       const payload = JSON.parse(init.body)
