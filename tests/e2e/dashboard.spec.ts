@@ -3,13 +3,14 @@ import { expect, test, type Page } from '@playwright/test';
 const cloudOrigin = 'https://dashboard.example.org';
 const ownerId = '11111111-1111-4111-8111-111111111111';
 const lifeAreas = [['work', 'Trabajo'], ['health', 'Salud'], ['spirituality', 'Espiritualidad'], ['romantic', 'Pareja'], ['family-friends', 'Familia y amigos'], ['five-buckets', 'Cinco baldes'], ['system', 'Sistema'], ['business', 'Negocios'], ['education', 'Educación']] as const;
+type DashboardRow = Record<string, unknown>;
 
 async function dashboardFixture(page: Page) {
   const user = { id: ownerId, aud: 'authenticated', role: 'authenticated', email: 'owner@example.org', app_metadata: {}, user_metadata: {}, created_at: '2026-01-01T00:00:00Z' };
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
   const token = `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify({ sub: ownerId, aud: 'authenticated', role: 'authenticated', exp: expiresAt })).toString('base64url')}.fixture`;
   await page.addInitScript(session => { localStorage.setItem('assistant-os-auth', JSON.stringify(session)); localStorage.setItem('gym_tour_v1', JSON.stringify({ done: true })); }, { access_token: token, refresh_token: 'fixture', token_type: 'bearer', expires_in: 3600, expires_at: expiresAt, user });
-  const state = { fail: false, reads: 0, errors: [] as string[], unexpected: [] as string[], data: { generated_at: new Date().toISOString(), counts: { records: 0 }, recent: [], current: [], upcoming: [], snapshots: [] as Record<string, unknown>[], finance: { by_currency: [], latest_transactions: [], networth: [] as Record<string, unknown>[] }, gym: { workout_count: 0, routine_count: 0, bodyweight_count: 0, workouts_30_days: 0, last_workout_at: null, last_bodyweight: null, next_training: null as { title: string; date?: string; due_at?: string } | null } } };
+  const state = { fail: false, reads: 0, errors: [] as string[], unexpected: [] as string[], data: { generated_at: new Date().toISOString(), counts: { records: 0 }, recent: [] as DashboardRow[], current: [] as DashboardRow[], upcoming: [] as DashboardRow[], snapshots: [] as DashboardRow[], finance: { by_currency: [], latest_transactions: [], networth: [] as DashboardRow[] }, gym: { workout_count: 0, routine_count: 0, bodyweight_count: 0, workouts_30_days: 0, last_workout_at: null, last_bodyweight: null, next_training: null as { title: string; date?: string; due_at?: string } | null } } };
   page.on('pageerror', error => state.errors.push(error.message));
   await page.routeWebSocket('**/realtime/v1/websocket*', socket => { socket.onMessage(raw => { const value = JSON.parse(String(raw)); if (value.event === 'phx_join') socket.send(JSON.stringify({ event: 'phx_reply', ref: value.ref, topic: value.topic, payload: { status: 'ok', response: { postgres_changes: [] } } })); }); });
   await page.route('**/*', async route => {
@@ -39,7 +40,7 @@ async function dashboardFixture(page: Page) {
 test('las nueve áreas abren y el panel se cierra, con teclado y ambos temas', async ({ page }) => {
   const state = await dashboardFixture(page);
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Tu vida, de un vistazo', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hoy', exact: true })).toBeVisible();
   for (const [id, label] of lifeAreas) {
     await page.getByRole('button', { name: 'Abrir áreas', exact: true }).click();
     await expect(page.getByRole('dialog', { name: 'Áreas de mi vida' })).toBeVisible();
@@ -81,7 +82,65 @@ test('el gimnasio autenticado conserva salida al inicio y cambio de área en sus
   await expect(page.getByRole('heading', { name: 'Trabajo', exact: true })).toBeVisible();
   await page.goto('/gym/#/home');
   await page.getByRole('link', { name: 'Personal OS', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Tu vida, de un vistazo', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Hoy', exact: true })).toBeVisible();
+  expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
+});
+
+test('la portada muestra estados vacíos y poblados en escritorio y móvil, ambos temas', async ({ page }) => {
+  const state = await dashboardFixture(page);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Hoy', exact: true })).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  await expect(page.getByRole('heading', { name: 'Lo próximo', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tus áreas', exact: true })).toBeVisible();
+
+  const scheduled = new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Santiago' }).format(new Date('2026-11-17T15:00:00Z'));
+
+  for (const [width, height] of [[1440, 1000], [390, 844]]) {
+    await page.setViewportSize({ width, height });
+    for (const theme of ['light', 'dark']) {
+      if (await page.locator('html').getAttribute('data-theme') !== theme) await page.getByRole('button', { name: /^Tema / }).click();
+      state.data.recent = [];
+      state.data.current = [];
+      state.data.upcoming = [];
+      state.data.snapshots = [];
+      await page.goto('/');
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.getByRole('heading', { name: 'Hoy', exact: true })).toBeVisible();
+      await expect(page.getByText('Sin próximos compromisos registrados', { exact: true })).toBeVisible();
+      await page.screenshot({ path: `test-results/dashboard-empty-${width}-${theme}.png`, fullPage: true });
+
+      await expect(page.getByRole('heading', { name: 'En marcha', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('heading', { name: 'Actividad reciente', exact: true })).toHaveCount(0);
+
+      state.data.recent.push({ id: 'recent-test', title: 'Cierre semanal de prueba', kind: 'note', status: 'completed', created_at: '2026-11-15T12:00:00Z' });
+      state.data.current.push({ id: 'current-test', title: 'Proyecto personal de prueba', kind: 'task', status: 'active' });
+      state.data.upcoming.push({ id: 'upcoming-test', title: 'Revisar agenda de prueba', kind: 'event', status: 'active', due_at: '2026-11-17T15:00:00Z' });
+      state.data.snapshots.push(
+        { area: 'health', source: 'gym', observed_at: '2026-11-16T12:00:00Z', received_at: '2026-11-16T12:00:00Z', payload: { summary: 'Entrenamiento de prueba', metrics: [], items: [], references: [], telemetry: [] } },
+        { area: 'work', source: 'calendar', observed_at: '2026-11-16T12:00:00Z', received_at: '2026-11-16T12:00:00Z', payload: { summary: 'Reunión de prueba', metrics: [], items: [], references: [], telemetry: [] } },
+      );
+      await page.reload();
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.getByRole('heading', { name: 'En marcha', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Actividad reciente', exact: true })).toBeVisible();
+      await expect(page.getByText('Proyecto personal de prueba')).toBeVisible();
+      await expect(page.getByText('Cierre semanal de prueba')).toBeVisible();
+      await expect(page.getByText('Revisar agenda de prueba')).toBeVisible();
+      await expect(page.getByText(scheduled)).toBeVisible();
+      await expect(page.getByText('Entrenamiento de prueba')).toBeVisible();
+      await expect(page.getByText('Reunión de prueba')).toBeVisible();
+      for (const [, label] of lifeAreas) await expect(page.getByRole('link', { name: label, exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Abrir Google Calendar', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Abrir gimnasio', exact: true })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: `test-results/dashboard-populated-${width}-${theme}.png`, fullPage: true });
+      await page.getByRole('button', { name: 'Abrir áreas', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Áreas de mi vida' })).toBeVisible();
+      await page.screenshot({ path: `test-results/dashboard-drawer-${width}-${theme}.png`, fullPage: true });
+      await page.keyboard.press('Escape');
+    }
+  }
   expect(state.errors).toEqual([]); expect(state.unexpected).toEqual([]);
 });
 

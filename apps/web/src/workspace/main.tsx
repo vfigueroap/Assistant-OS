@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { Activity, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardList, CloudOff, FileText, FolderKanban, HeartPulse, LayoutDashboard, LogOut, Menu, Plus, Search, Settings2, ShieldCheck, Sparkles, Target, Upload, X } from 'lucide-react';
 import { parseMoney, summarizeFinance } from '@personal-ai-os/domain';
+import './style.css';
 import { PersonalNavigation, areaLocation, areas, type AreaId } from '../navigation.js';
 import { Dashboard } from './dashboard.js';
-import './style.css';
 
 type Row = { id: string; owner_id: string; kind: string; title: string; status: string; due_at: string | null; data: Record<string, unknown>; created_at: string };
 type Transaction = { id: string; owner_id: string; amount_minor: number | null; currency: string; direction: 'expense'|'income'|'refund'|'transfer'; kind: string; status: 'draft'|'confirmed'|'void'; settlement_status: string; merchant: string | null; description: string; category: string | null; occurred_at: string | null; evidence_id: string | null };
