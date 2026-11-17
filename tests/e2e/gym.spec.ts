@@ -4,7 +4,11 @@ test('el gimnasio compilado abre y conserva la navegación con el portal sin cue
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/config', route => route.fulfill({ json: { configured: false, supabaseUrl: '', supabasePublishableKey: '' } }));
+  const fontResponse = page.waitForResponse(response => response.url().includes('/gym/assets/') && response.url().endsWith('.woff2'));
   await page.goto('/gym/');
+  const bundledFont = await fontResponse;
+  expect(bundledFont.status()).toBe(200);
+  expect((await bundledFont.body()).subarray(0, 4).toString()).toBe('wOF2');
   const login = page.getByRole('link', { name: 'Entrar desde el portal', exact: true });
   await expect(login).toBeVisible();
   await expect(page.getByRole('link', { name: 'Código fuente AGPL' })).toHaveAttribute('href', /^https:\/\//);
