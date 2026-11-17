@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function local(page: Page) {
   await page.route('**/api/config', route => route.fulfill({ json: { configured: false, supabaseUrl: '', supabasePublishableKey: '' } }));
-  await page.goto('/');
+  await page.goto('/records');
   await expect(page.getByText('Todavía no tienes registros.', { exact: false })).toBeVisible();
 }
 
@@ -74,7 +74,7 @@ test('dos pestañas conservan nuevas entradas y detectan una edición obsoleta',
   await local(page);
   const second = await context.newPage();
   await second.route('**/api/config', route => route.fulfill({ json: { configured: false, supabaseUrl: '', supabasePublishableKey: '' } }));
-  await second.goto('/');
+  await second.goto('/records');
   await expect(second.getByRole('button', { name: 'Guardar registro', exact: true })).toBeEnabled();
   await page.getByLabel('Título', { exact: true }).fill('Primero');
   await page.getByRole('button', { name: 'Guardar registro', exact: true }).click();
@@ -90,7 +90,7 @@ test('dos pestañas conservan nuevas entradas y detectan una edición obsoleta',
 
 test('carga y error de conexión tienen respuesta visible', async ({ page }) => {
   await page.route('**/api/config', async route => { await new Promise(resolve => setTimeout(resolve, 500)); await route.fulfill({ status: 503, json: { error: 'sin conexión' } }); });
-  await page.goto('/');
+  await page.goto('/records');
   await expect(page.getByRole('status')).toContainText('Abriendo');
   await expect(page.getByRole('alert')).toContainText('No se pudo comprobar la conexión');
   await page.unroute('**/api/config');
@@ -120,7 +120,7 @@ test('móvil, tableta y escritorio conservan controles visibles en ambos temas',
         return ['--ink', '--muted', '--accent', '--error'].flatMap(name => [style.backgroundColor, style.getPropertyValue('--paper')].map(background => ratio(style.getPropertyValue(name), background)));
       });
       expect(Math.min(...contrasts)).toBeGreaterThanOrEqual(4.5);
-      const targets = await page.locator('button:visible, nav a').evaluateAll(elements => elements.map(element => ({ label: element.textContent, height: element.getBoundingClientRect().height })));
+      const targets = await page.locator('button:visible, nav a:visible').evaluateAll(elements => elements.map(element => ({ label: element.textContent, height: element.getBoundingClientRect().height })));
       expect(targets.filter(target => target.height < 44)).toEqual([]);
       await page.getByRole('button', { name: /^Tema / }).click();
     }

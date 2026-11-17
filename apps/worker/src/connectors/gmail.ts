@@ -2,6 +2,7 @@ import { GoogleToken } from './google.js';
 import { jsonRequest, ProviderError } from '../http.js';
 import { StateStore } from '../state.js';
 import type { Capture } from '../ingest.js';
+import { areaIds, type AreaId } from '@personal-ai-os/domain';
 
 interface GmailPart { mimeType?: string; filename?: string; headers?: Array<{ name: string; value: string }>; body?: { data?: string; attachmentId?: string; size?: number }; parts?: GmailPart[] }
 interface GmailMessage { id: string; internalDate?: string; labelIds?: string[]; payload?: GmailPart }
@@ -16,7 +17,17 @@ export function receiptAttachments(part?: GmailPart): GmailPart[] {
   const own = part.filename && ['application/pdf', 'image/jpeg', 'image/png'].includes(mime) && part.body?.attachmentId ? [part] : [];
   return [...own, ...(part.parts ?? []).flatMap(receiptAttachments)];
 }
-export interface GmailOptions { ownerId: string; labelIds: string[]; senders: string[]; initialDays?: number }
+export interface GmailOptions { ownerId: string; labelIds: string[]; senders: string[]; initialDays?: number; labelAreas?: Record<string, AreaId> }
+export function gmailLabelAreas(value = process.env.GMAIL_LABEL_AREAS ?? '{}'): Record<string, AreaId> {
+  const labels = JSON.parse(value);
+  if (!labels || Array.isArray(labels) || typeof labels !== 'object' || Object.keys(labels).length > 100 || Object.entries(labels).some(([key, area]) => !key || !areaIds.includes(area as AreaId))) throw new ProviderError('gmail_label_areas_invalid', false);
+  return labels;
+}
+export function gmailCaptureArea(labelIds: string[], options: GmailOptions): { area: AreaId; classification: Capture['classification'] } {
+  const selected = options.labelIds.filter(label => labelIds.includes(label));
+  const mapped = selected.find(label => options.labelAreas && Object.hasOwn(options.labelAreas, label));
+  return mapped ? { area: options.labelAreas![mapped]!, classification: 'document' } : { area: 'work', classification: 'financial_evidence' };
+}
 export async function pollGmail(state: StateStore, options: GmailOptions, ingest: (capture: Capture) => Promise<unknown>, signal?: AbortSignal) {
   if (!options.labelIds.length || !options.senders.length) throw new ProviderError('gmail_label_and_sender_allowlists_required', false);
   const token = await new GoogleToken('GMAIL').get();
@@ -59,17 +70,18 @@ export async function pollGmail(state: StateStore, options: GmailOptions, ingest
     const header = (name: string) => headers.find(h => h.name.toLowerCase() === name)?.value ?? '';
     const from = header('from').match(/<([^>]+)>/)?.[1] ?? header('from').trim();
     if (!options.senders.map(s => s.toLowerCase()).includes(from.toLowerCase())) continue;
+    const captureArea = gmailCaptureArea(message.labelIds ?? [], options);
     // Never fetch email links or render HTML, and never obey instructions in a receipt.
     const body = plainGmail(message.payload);
     const receivedAt = new Date(Number(message.internalDate ?? Date.now())).toISOString();
-    if (body) await ingest({ source: 'gmail', externalId: id, ownerId: options.ownerId, bytes: new TextEncoder().encode(body), mime: 'text/plain', title: header('subject').slice(0, 240) || 'Notificación financiera', classification: 'financial_evidence', metadata: { message_id: id, sender: from, received_at: receivedAt } });
+    if (body) await ingest({ source: 'gmail', externalId: id, ownerId: options.ownerId, bytes: new TextEncoder().encode(body), mime: 'text/plain', title: header('subject').slice(0, 240) || 'Correo autorizado', ...captureArea, metadata: { message_id: id, sender: from, received_at: receivedAt } });
     for (const part of receiptAttachments(message.payload)) {
       if (!part.body?.attachmentId || (part.body.size ?? 0) > 20 * 1024 * 1024) continue;
       const attachment = await request<{data:string;size:number}>(`messages/${encodeURIComponent(id)}/attachments/${encodeURIComponent(part.body.attachmentId)}`);
       if (typeof attachment.data !== 'string' || attachment.size > 20 * 1024 * 1024) continue;
       const bytes = Buffer.from(attachment.data,'base64url');
       if (bytes.byteLength > 20 * 1024 * 1024 || bytes.byteLength !== attachment.size) continue;
-      await ingest({source:'gmail',externalId:`${id}:attachment:${part.body.attachmentId}`,ownerId:options.ownerId,bytes,mime:part.mimeType!,title:(part.filename||'Adjunto').slice(0,240),classification:'financial_evidence',metadata:{message_id:id,sender:from,received_at:receivedAt}});
+      await ingest({source:'gmail',externalId:`${id}:attachment:${part.body.attachmentId}`,ownerId:options.ownerId,bytes,mime:part.mimeType!,title:(part.filename||'Adjunto').slice(0,240),...captureArea,metadata:{message_id:id,sender:from,received_at:receivedAt}});
     }
   }
   if (finalCursor) await state.write('gmail', { historyId: finalCursor, synced_at: new Date().toISOString() });

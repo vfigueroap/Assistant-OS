@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { kinds, putLocalRecord, readLocalRecords, recordSchema, safeReturnTo, storageKey, type PersonalRecord } from './records.js';
+import { PersonalNavigation } from './navigation.js';
 
 type Connection = { mode: 'local' } | { mode: 'cloud'; client: SupabaseClient; session: Session | null };
 const columns = 'id,owner_id,kind,title,status,due_at,data,created_at,updated_at,deleted_at';
 const pageSize = 100;
 const localOnly = new URLSearchParams(location.search).get('local') === '1';
-const homeUrl = localOnly ? '/?local=1' : '/';
+const homeUrl = localOnly ? '/?local=1' : '/records';
 const settingsUrl = localOnly ? '/settings?local=1' : '/settings';
 
 function App() {
@@ -196,8 +197,7 @@ function App() {
   const visible = records.filter(record => !record.deleted_at && (kind === 'all' || record.kind === kind));
 
   return <>
-    <a className="skip" href="#main">Ir al contenido</a>
-    <header className="header"><a className="brand" href={homeUrl}>Personal OS</a><nav aria-label="Principal"><a href={homeUrl} aria-current={!settings ? 'page' : undefined}>Registros</a><a href="/study">Herramientas</a><a href="/gym/">Gimnasio</a><a href={settingsUrl} aria-current={settings ? 'page' : undefined}>Conexión</a></nav><button type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>Tema {theme === 'dark' ? 'claro' : 'oscuro'}</button></header>
+    <PersonalNavigation theme={theme} onThemeChange={() => setTheme(theme === 'dark' ? 'light' : 'dark')}/>
     <main id="main">
       <div className="intro"><p className="date">{new Intl.DateTimeFormat('es-CL', { dateStyle: 'full' }).format(new Date())}</p><h1>{settings ? 'Tu conexión' : 'Lo que quieres hacer y recordar'}</h1><p>{connection?.mode === 'local' ? 'Modo local. Tus registros se guardan solo en este navegador; exporta una copia para conservarlos.' : signedIn ? 'Tu espacio personal conectado.' : 'Tareas, notas y fechas en un solo lugar.'}</p></div>
       {error && <div className="error" role="alert"><p>{error}</p><button type="button" onClick={() => connection ? void load() : location.reload()} disabled={loading}>Volver a intentar</button></div>}
@@ -225,6 +225,6 @@ function App() {
   </>;
 }
 
-if (['/study', '/calendar', '/finance', '/goals', '/knowledge', '/projects', '/system'].some(route => location.pathname === route || location.pathname.startsWith(route + '/'))) {
+if (!localOnly && (location.pathname === '/' || location.pathname.startsWith('/areas/') || ['/study', '/calendar', '/finance', '/goals', '/knowledge', '/projects', '/system'].some(route => location.pathname === route || location.pathname.startsWith(route + '/')))) {
   void import('./workspace/main.js');
 } else void import('./style.css').then(() => createRoot(document.getElementById('root')!).render(<App/>));

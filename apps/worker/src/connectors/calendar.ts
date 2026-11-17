@@ -11,28 +11,34 @@ export function configuredCalendars(): CalendarConnection[] {
   if (!Array.isArray(value) || value.length > 10 || value.some(c => !c.id || !c.calendarId || typeof c.systemOwned !== 'boolean')) throw new ProviderError('calendar_configuration_invalid', false);
   return value;
 }
-export async function syncCalendar(connectionId: string, syncCursor?: string, signal?: AbortSignal) {
+export async function syncCalendar(connectionId: string, syncCursor?: string, signal?: AbortSignal, fullSyncAt?: string) {
   const connection = configuredCalendars().find(c => c.id === connectionId);
   if (!connection) throw new ProviderError('calendar_not_allowlisted', false);
   const token = await new GoogleToken('CALENDAR').get();
   const read = async (cursor?: string) => {
+    const startedAt = new Date();
     let page: string | undefined; const events: GoogleEvent[] = []; let nextSyncToken: string | undefined; let pages = 0;
     do {
       const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(connection.calendarId)}/events`);
-      url.searchParams.set('maxResults', '250'); url.searchParams.set('showDeleted', 'true');
+      url.searchParams.set('maxResults', '250'); url.searchParams.set('showDeleted', 'true'); url.searchParams.set('singleEvents', 'true');
       if (cursor) url.searchParams.set('syncToken', cursor);
+      else {
+        url.searchParams.set('timeMin', new Date(startedAt.getTime() - 30 * 86400000).toISOString());
+        url.searchParams.set('timeMax', new Date(startedAt.getTime() + 180 * 86400000).toISOString());
+      }
       if (page) url.searchParams.set('pageToken', page);
       const result: { items?: GoogleEvent[]; nextPageToken?: string; nextSyncToken?: string } = await jsonRequest(url, { headers: { Authorization: `Bearer ${token}` }, signal });
       events.push(...result.items ?? []); page = result.nextPageToken; nextSyncToken = result.nextSyncToken;
-      if (++pages > 20 || events.length > 2000) throw new ProviderError('calendar_sync_limit_choose_dedicated_calendar', false);
+      if (++pages > 20 || events.length > 2000) throw new ProviderError('calendar_sync_limit_no_events_truncated', false);
     } while (page);
-    return { events: events.map(e => ({ external_id: e.id, title: e.summary ?? '(Sin título)', start_at: e.start?.dateTime ?? e.start?.date ?? '', end_at: e.end?.dateTime ?? e.end?.date ?? '', status: e.status ?? 'confirmed', data: { etag: e.etag, all_day: !!e.start?.date, system_owned: e.extendedProperties?.private?.personal_ai_os === 'true' } })), ...(nextSyncToken ? { sync_cursor: nextSyncToken } : {}) };
+    return { events: events.map(e => ({ external_id: e.id, title: e.summary ?? '(Sin título)', ...(e.status === 'cancelled' && (!e.start || !e.end) ? {} : { start_at: e.start?.dateTime ?? e.start?.date ?? '', end_at: e.end?.dateTime ?? e.end?.date ?? '' }), status: e.status ?? 'confirmed', data: { etag: e.etag, all_day: !!e.start?.date, system_owned: e.extendedProperties?.private?.personal_ai_os === 'true' } })), full_sync_at: cursor ? fullSyncAt ?? startedAt.toISOString() : startedAt.toISOString(), ...(nextSyncToken ? { sync_cursor: nextSyncToken } : {}) };
   };
   try { return await read(syncCursor); }
   catch (error) { if (error instanceof ProviderError && error.status === 410) return read(); throw error; }
 }
 interface AuthorizedAction { action_id: string; operation: string; resource?: Record<string, unknown>; payload: Record<string, unknown>; payload_hash: string }
 export async function applyCalendar(client: WorkerClient, jobId: string, lease: string, actionId: string, signal?: AbortSignal) {
+  if (process.env.CALENDAR_WRITES_ENABLED !== 'true') throw new ProviderError('calendar_writes_disabled', false);
   const action = await rpc<AuthorizedAction>(client, 'authorize_action', { p_job_id: jobId, p_lease_token: lease, p_action_id: actionId });
   const connection = configuredCalendars().find(c => c.id === action.payload.connection_id);
   if (!connection?.systemOwned || action.resource?.calendar_id !== connection.calendarId) throw new ProviderError('calendar_write_requires_system_owned_calendar', false);

@@ -9,7 +9,9 @@ test('el gimnasio compilado abre y conserva la navegación con el portal sin cue
   await expect(login).toBeVisible();
   await expect(page.getByRole('link', { name: 'Código fuente AGPL' })).toHaveAttribute('href', /^https:\/\//);
   await page.getByRole('link', { name: 'Volver al portal', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Lo que quieres hacer y recordar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tu vida, de un vistazo' })).toBeVisible();
+  await page.getByRole('button', { name: 'Abrir áreas', exact: true }).click();
+  await page.getByRole('link', { name: 'Salud', exact: true }).click();
   await page.getByRole('link', { name: 'Gimnasio', exact: true }).click();
   await login.click();
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fgym%2F/);

@@ -56,7 +56,11 @@ test('portal y gimnasio conectados permiten llegar al acceso sin credenciales ni
   await expect(page.getByRole('heading', { name: 'Entrar a tu espacio', exact: true })).toBeVisible();
   await expect(page.getByLabel('Correo', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Contraseña', { exact: true })).toHaveValue('');
-  await page.getByRole('link', { name: 'Gimnasio', exact: true }).click();
+  await page.getByRole('button', { name: 'Abrir áreas', exact: true }).click();
+  await page.getByRole('link', { name: 'Salud', exact: true }).click();
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fareas%2Fhealth%2Foverview$/);
+  await expect(page.getByRole('heading', { name: 'Entrar a tu espacio', exact: true })).toBeVisible();
+  await page.goto('/gym/');
   await expect(page.getByRole('heading', { name: 'Accede al gimnasio', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Entrar desde el portal', exact: true }).click();
   await expect(page).toHaveURL(/\/login\?returnTo=%2Fgym%2F$/);

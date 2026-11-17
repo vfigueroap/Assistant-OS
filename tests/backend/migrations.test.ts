@@ -74,3 +74,24 @@ it('preserves revision history and rejects oversized JSONB without changing save
   const current = await db.query<{ result: { state: unknown; rev: number; wid: string } }>('select public.get_gym_state() as result');
   expect(current.rows[0]!.result).toMatchObject({ rev: saved.rev, wid: saved.wid, state: { ...state, _rev: saved.rev, _wid: saved.wid, _wids: [base.wid] } });
 });
+
+it('publishes worker snapshots, rejects invalid fields and isolates dashboard access', async () => {
+  await db.exec('reset role');
+  await db.query("select public.register_worker($1,array['dashboard.publish','ingest.gmail'])", [stranger]);
+  await db.exec(`set role authenticated; set request.jwt.claim.sub='${stranger}'`);
+  const delivery = { version: 1, id: '3a30abcc-1102-4c93-bb42-8378efdc2c70', area: 'work', source: 'test', observed_at: '2026-01-01T00:00:00Z', summary: 'Resumen',
+    valuations: [{ account_ref: 'caja', name: 'Caja', kind: 'asset', currency: 'CLP', amount_minor: 2500, valued_at: '2026-01-01T00:00:00Z', source_ref: 'manual' }] };
+  await expect(db.query("select private.register_worker($1,array['dashboard.publish'])", [stranger])).rejects.toThrow('permission denied');
+  const publish = (value: unknown) => db.query('select public.publish_dashboard($1::jsonb) as result', [JSON.stringify(value)]);
+  expect((await publish(delivery)).rows[0]).toMatchObject({ result: { accepted: true } });
+  expect((await publish(delivery)).rows[0]).toMatchObject({ result: { duplicate: true } });
+  await expect(publish({ ...delivery, items: [{ id: '1', kind: 'activity', title: {} }] })).rejects.toThrow('Invalid dashboard field type');
+  const capture = { title: 'Acta', sha256: '1'.repeat(64), mime: 'text/plain', size_bytes: 4, local_ref: 'sha256:' + '1'.repeat(64), classification: 'document' };
+  const ingest = (source: string | null) => db.query('select public.worker_ingest_local($1,$2,$3::jsonb) as result', [source, 'acta', JSON.stringify(capture)]);
+  expect((await ingest('gmail')).rows[0]).toMatchObject({ result: { duplicate: false } });
+  await expect(ingest(null)).rejects.toThrow('Invalid local capture');
+  await expect(db.query('select public.get_dashboard()')).rejects.toThrow('Workspace owner authorization required');
+  await db.exec(`set request.jwt.claim.sub='${owner}'`);
+  const dashboard = await db.query("select public.get_dashboard('work') as result");
+  expect(dashboard.rows[0]).toMatchObject({ result: { snapshots: [{ payload: delivery }], finance: { networth: [{ currency: 'CLP', networth_minor: 2500 }] } } });
+});

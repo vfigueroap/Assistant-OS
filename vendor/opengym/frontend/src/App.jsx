@@ -53,7 +53,8 @@ import { useAnimPacksBoot } from './components/Animations.jsx'
 import { useNfcTagLinks } from './components/Nfc.jsx'
 import { useRoutineLinks } from './components/RoutineShare.jsx'
 import Login from './views/Login.jsx'
-import { PortalLogin, PortalSettingsPage } from '../../../../apps/gym/src/PortalBoundary.jsx'
+import { PortalLogin, PortalSettingsPage, GymSourceFooter } from '../../../../apps/gym/src/PortalBoundary.jsx'
+import { PersonalNavigation } from '../../../../apps/web/src/navigation.tsx'
 import MobileOnboarding from './views/MobileOnboarding.jsx'
 import PermissionSteps from './views/PermissionSteps.jsx'
 import Home from './views/Home.jsx'
@@ -363,12 +364,13 @@ function Shell() {
 
   return (
     <>
+      <PersonalNavigation areaId="health" section="gym" gym />
       {/* One page per route, keyed on it: a view that throws is contained, and switching tabs
           re-mounts the boundary, so the tab bar is always a way out. While an edge swipe back
           is under way the page it goes back to sits underneath (Page `under`), and as the swipe
           lands it simply stays: same key, same parent, so React keeps it instead of mounting
           the route again. */}
-      <div id="app">
+      <div id="app" tabIndex={-1}>
         <Page key={loc.pathname} loc={loc} render={view} motion={pageMotion(pathRef.current, loc.pathname, navType)} />
         {showPreview && <Page key={preview} loc={previewLoc(preview)} render={view} under scrollY={scrollPositions.get(preview) || 0} />}
       </div>
@@ -376,6 +378,7 @@ function Shell() {
           would ride along with the page for the length of it. Decides for itself when to show —
           including on the sign-in screen, when the server has just ended the session. */}
       <SyncBanner />
+      {authed && <GymSourceFooter />}
       {!noTabs && <TabBar onStart={startFlow} />}
       {!noTabs && authed && <ScrollTopButton off={loc.pathname === '/workout'} path={loc.pathname} />}
       <RestTimer />

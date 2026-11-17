@@ -63,7 +63,7 @@ test('cargar más permite exportar todos los registros de la cuenta', async ({ p
   const state = await cloud(page);
   const now = new Date().toISOString();
   state.records = Array.from({ length: 101 }, (_, index) => ({ id: crypto.randomUUID(), owner_id: ownerId, kind: 'note', title: `Registro ${index + 1}`, status: 'active', due_at: null, data: {}, created_at: now, updated_at: now, deleted_at: null }));
-  await page.goto('/login');
+  await page.goto('/login?returnTo=/records');
   await login(page);
   await expect(page.getByRole('button', { name: 'Carga todo para exportar' })).toBeDisabled();
   await page.getByRole('button', { name: 'Cargar más registros', exact: true }).click();
@@ -80,11 +80,11 @@ test('cargar más permite exportar todos los registros de la cuenta', async ({ p
 
 test('login inválido permite corregir, el propietario entra y puede cerrar la sesión', async ({ page }) => {
   const state = await cloud(page);
-  await page.goto('/login?returnTo=/');
+  await page.goto('/login?returnTo=/records');
   await login(page, 'incorrecta');
   await expect(page.getByRole('alert')).toContainText('No se pudo iniciar sesión');
   await login(page);
-  await expect(page).toHaveURL('http://127.0.0.1:5173/');
+  await expect(page).toHaveURL('http://127.0.0.1:5173/records');
   await expect(page.getByRole('heading', { name: 'Anotar algo', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Conexión', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sesión iniciada', exact: true })).toBeVisible();
@@ -98,6 +98,7 @@ test('login inválido permite corregir, el propietario entra y puede cerrar la s
 for (const entry of ['/login', '/']) test(`una cuenta sin propiedad se desconecta y no obtiene el editor desde ${entry}`, async ({ page }) => {
   const state = await cloud(page, false);
   await page.goto(entry);
+  if (entry === '/') await page.getByRole('link', { name: 'Entrar a mi espacio', exact: true }).click();
   await login(page);
   await expect(page.getByRole('alert')).toContainText('Esta cuenta no es la propietaria');
   await expect(page.getByRole('heading', { name: 'Entrar a tu espacio', exact: true })).toBeVisible();
@@ -110,7 +111,7 @@ for (const entry of ['/login', '/']) test(`una cuenta sin propiedad se desconect
 
 test('registros en nube se editan y restauran tras recargar, sin pisar una revisión ajena', async ({ page }) => {
   const state = await cloud(page);
-  await page.goto('/login?returnTo=/');
+  await page.goto('/login?returnTo=/records');
   await login(page);
   await expect(page.getByRole('heading', { name: 'Anotar algo', exact: true })).toBeVisible();
   await page.getByLabel('Título', { exact: true }).fill('Registro en nube');

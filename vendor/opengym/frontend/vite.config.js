@@ -108,6 +108,7 @@ export default defineConfig({
   envDir: fileURLToPath(new URL('../../../', import.meta.url)),
   define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react(), umami, flavor, swStamp, catalogueMedia],
+  resolve: { dedupe: ['react', 'react-dom'] },
   base: './',
   server: {
     // The Coach's core (payload, validator, prompts, HTTP adapters) lives in ../api/coach/core

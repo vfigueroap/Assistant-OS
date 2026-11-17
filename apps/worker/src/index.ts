@@ -9,7 +9,8 @@ import { executeJob, type LeasedJob } from './handlers.js';
 import { ProviderError } from './http.js';
 import { ingestCapture } from './ingest.js';
 import { pollTelegram } from './connectors/telegram.js';
-import { pollGmail } from './connectors/gmail.js';
+import { pollGmail, gmailLabelAreas } from './connectors/gmail.js';
+import { publishDashboard, publishInbox, updateRuntimePolicy } from './dashboard.js';
 
 const jobSchema = z.object({ id: z.uuid(), owner_id: z.uuid(), kind: z.enum(jobKinds), payload: z.record(z.string(), z.unknown()), lease_token: z.uuid(), attempt: z.number().optional() }).passthrough();
 function log(event: string, data: Record<string, unknown> = {}) { console.log(JSON.stringify({ at: new Date().toISOString(), event, ...data })); }
@@ -19,7 +20,7 @@ export async function main() {
   await state.exclusive('worker-process', async () => {
     const client = await workerClient(config, state);
     const ownerId = process.env.WORKER_OWNER_ID;
-    const capture = (value: Parameters<typeof ingestCapture>[1]) => ingestCapture(client, value);
+    const capture = (value: Parameters<typeof ingestCapture>[1]) => ingestCapture(client, value, config, stop.signal);
     const background: Promise<void>[] = [];
     if (process.env.TELEGRAM_ENABLED === 'true') {
       if (!ownerId || !process.env.TELEGRAM_OWNER_USER_ID || !process.env.TELEGRAM_OWNER_CHAT_ID) throw new Error('Telegram owner IDs required');
@@ -27,10 +28,23 @@ export async function main() {
     }
     if (process.env.GMAIL_ENABLED === 'true') {
       if (!ownerId) throw new Error('Gmail owner ID required');
-      background.push((async () => { while (!stop.signal.aborted) { try { await pollGmail(state, { ownerId, labelIds: (process.env.GMAIL_LABEL_IDS ?? '').split(',').filter(Boolean), senders: (process.env.GMAIL_ALLOWED_SENDERS ?? '').split(',').filter(Boolean) }, capture, stop.signal); } catch { if (!stop.signal.aborted) log('gmail_unavailable'); } await delay(300000, undefined, { signal: stop.signal }).catch(() => {}); } })());
+      const labelAreas = gmailLabelAreas();
+      background.push((async () => { while (!stop.signal.aborted) { try { await pollGmail(state, { ownerId, labelIds: (process.env.GMAIL_LABEL_IDS ?? '').split(',').filter(Boolean), senders: (process.env.GMAIL_ALLOWED_SENDERS ?? '').split(',').filter(Boolean), labelAreas }, capture, stop.signal); } catch { if (!stop.signal.aborted) log('gmail_unavailable'); } await delay(300000, undefined, { signal: stop.signal }).catch(() => {}); } })());
     }
     log('worker_started', { inference: process.env.EXTERNAL_AI_ENABLED === 'true' ? 'configured_api' : 'disabled', integrations: { telegram: process.env.TELEGRAM_ENABLED === 'true', gmail: process.env.GMAIL_ENABLED === 'true' } });
+    let policyAttemptAt = 0;
     while (!stop.signal.aborted) {
+      if (config.dashboardInbox) {
+        if (Date.now() - policyAttemptAt >= 30000) {
+          policyAttemptAt = Date.now();
+          try { await updateRuntimePolicy(client, config.dashboardInbox); }
+          catch { if (!stop.signal.aborted) log('runtime_policy_unavailable'); }
+        }
+        try {
+          const result = await publishInbox(config.dashboardInbox, delivery => publishDashboard(client, delivery), stop.signal);
+          if (result.published || result.quarantined) log('dashboard_inbox_processed', result);
+        } catch { if (!stop.signal.aborted) log('dashboard_publication_unavailable'); }
+      }
       try {
         const jobs = z.array(jobSchema).parse(await rpc(client, 'claim_jobs', { p_limit: 1 })) as LeasedJob[];
         for (const job of jobs) {
@@ -41,7 +55,7 @@ export async function main() {
             const result = await executeJob(client, job, config, state, signal);
             if (signal.aborted) throw new ProviderError('job_cancelled_or_lease_lost', false);
             await rpc(client, 'complete_job', { p_job_id: job.id, p_lease_token: job.lease_token, p_result: result });
-            if (job.kind === 'calendar.sync' && 'sync_cursor' in result) await state.write(`calendar-${Buffer.from(String(job.payload.connection_id)).toString('hex')}`, { sync_cursor: result.sync_cursor });
+            if (job.kind === 'calendar.sync' && 'sync_cursor' in result) await state.write(`calendar-${Buffer.from(String(job.payload.connection_id)).toString('hex')}`, { sync_cursor: result.sync_cursor, ...('full_sync_at' in result ? { full_sync_at: result.full_sync_at } : {}) });
             log('job_completed', { job_id: job.id, kind: job.kind });
           } catch (error) {
             const code = error instanceof ProviderError ? error.code : 'job_execution_failed';

@@ -25,6 +25,8 @@ export async function loadConfig() {
     try { if (JSON.parse(Buffer.from(publishableKey.split('.')[1]!, 'base64url').toString()).role !== 'anon') throw new Error(); }
     catch { throw new Error('Only publishable or legacy anon keys allowed'); }
   }
+  const captureStorage = process.env.CAPTURE_STORAGE ?? 'local';
+  if (!['local', 'cloud'].includes(captureStorage)) throw new Error('CAPTURE_STORAGE must be local or cloud');
   return {
     supabaseUrl, publishableKey,
     email: process.env.WORKER_EMAIL ?? process.env.SUPABASE_WORKER_EMAIL,
@@ -34,6 +36,9 @@ export async function loadConfig() {
     pollMs: integer(process.env.WORKER_POLL_MS, 5000, 1000, 60000),
     maxFileBytes: 20 * 1024 * 1024,
     bucket: 'personal-files',
+    captureStorage: captureStorage as 'local' | 'cloud',
+    captureDirectory: path.resolve(process.env.CAPTURE_LOCAL_DIR ?? '.local/homelab/captures'),
+    dashboardInbox: process.env.DASHBOARD_INBOX_DIR ? path.resolve(process.env.DASHBOARD_INBOX_DIR) : undefined,
   };
 }
 export type WorkerConfig = Awaited<ReturnType<typeof loadConfig>>;

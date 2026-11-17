@@ -69,8 +69,9 @@ export async function executeJob(client: WorkerClient, job: LeasedJob, config: W
       break;
     }
     case 'calendar.sync': {
-      const id = String(payload.connection_id); const saved = await state.read<{ sync_cursor?: string }>(`calendar-${Buffer.from(id).toString('hex')}`, {});
-      result = await syncCalendar(id, saved.sync_cursor, signal); break;
+      const id = String(payload.connection_id); const saved = await state.read<{ sync_cursor?: string; full_sync_at?: string }>(`calendar-${Buffer.from(id).toString('hex')}`, {});
+      const age = Date.now() - Date.parse(saved.full_sync_at ?? '');
+      result = await syncCalendar(id, Number.isFinite(age) && age >= 0 && age < 86400000 ? saved.sync_cursor : undefined, signal, saved.full_sync_at); break;
     }
     case 'calendar.apply': result = await applyCalendar(client, job.id, job.lease_token, String(payload.action_id), signal); break;
     case 'planner.week': {

@@ -1,9 +1,10 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { Activity, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleDollarSign, ClipboardList, CloudOff, FileText, FolderKanban, HeartPulse, LayoutDashboard, LogOut, Menu, Plus, Search, Settings2, ShieldCheck, Sparkles, Target, Upload, X } from 'lucide-react';
 import { parseMoney, summarizeFinance } from '@personal-ai-os/domain';
+import { PersonalNavigation, areaLocation, areas, type AreaId } from '../navigation.js';
+import { Dashboard } from './dashboard.js';
 import './style.css';
 
 type Row = { id: string; owner_id: string; kind: string; title: string; status: string; due_at: string | null; data: Record<string, unknown>; created_at: string };
@@ -14,21 +15,16 @@ type Job = { id: string; kind: string; status: string; created_at: string; error
 type Action = { id: string; operation: string; payload_hash: string; payload: Record<string,unknown>; status: string; expires_at: string };
 type Data = { records: Row[]; transactions: Transaction[]; documents: Document[]; evidence: Evidence[]; jobs: Job[]; actions: Action[]; fragments: { id:string; document_id:string; text:string; locator:Record<string,unknown> }[]; budgets: {id:string;title:string;amount_minor:number;currency:string;period_start:string;period_end:string}[] };
 const empty: Data = { records: [], transactions: [], documents: [], evidence: [], jobs: [], actions: [], fragments: [], budgets: [] };
-const nav = [
-  ['/', 'Mis registros', LayoutDashboard], ['/gym/', 'Gimnasio', Activity], ['/study', 'Estudios', BookOpen], ['/calendar', 'Calendario', CalendarDays], ['/finance', 'Finanzas', CircleDollarSign], ['/goals', 'Objetivos', Target], ['/knowledge', 'Conocimiento', FileText], ['/projects', 'Proyectos', FolderKanban], ['/system', 'Sistema', Settings2]
-] as const;
 const formatDate = (s?: string | null) => s ? new Intl.DateTimeFormat('es-CL',{dateStyle:'medium',timeZone:'America/Santiago'}).format(new Date(s)) : 'Sin fecha';
 const money = (n:number,c='CLP') => new Intl.NumberFormat('es-CL',{style:'currency',currency:c,maximumFractionDigits:c==='CLP'?0:2}).format(n/(c==='CLP'?1:100));
 function App() {
   const [client,setClient]=useState<SupabaseClient|null>(null); const [user,setUser]=useState<User|null>(null); const [owner,setOwner]=useState<boolean|null>(null);
-  const [data,setData]=useState<Data>(empty); const [busy,setBusy]=useState(true); const [message,setMessage]=useState(''); const [menu,setMenu]=useState(false);
+  const [data,setData]=useState<Data>(empty); const [busy,setBusy]=useState(true); const [message,setMessage]=useState('');
   const [paused,setPaused]=useState(true); const [worker,setWorker]=useState<Record<string,unknown>|null>(null);
   const [gymCount,setGymCount]=useState(0);
   const requestVersion=useRef(0);
-  const menuButton=useRef<HTMLButtonElement>(null);
-  const [theme,setTheme]=useState(()=>{try{return localStorage.getItem('assistant-os-theme')==='dark'?'dark':'light'}catch{return 'light'}});
+  const [theme,setTheme]=useState(()=>{try{return localStorage.getItem('assistant-os-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}catch{return 'light'}});
   useEffect(()=>{document.documentElement.classList.add('workspace');document.documentElement.dataset.theme=theme;try{localStorage.setItem('assistant-os-theme',theme)}catch{}},[theme]);
-  useEffect(()=>{function escape(event:KeyboardEvent){if(event.key==='Escape'){setMenu(false);menuButton.current?.focus()}}if(menu)document.querySelector<HTMLAnchorElement>('#workspace-navigation a')?.focus();window.addEventListener('keydown',escape);return()=>window.removeEventListener('keydown',escape)},[menu]);
   useEffect(()=>{
     let alive=true; let unsubscribe:(()=>void)|undefined;
     (async()=>{try{
@@ -43,7 +39,7 @@ function App() {
       const c=createClient(endpoint.toString(),key,{auth:{storageKey:'assistant-os-auth',persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
       const {data:{user:u}}=await c.auth.getUser();
       if(!alive){c.auth.stopAutoRefresh();return}
-      if(!u){location.replace('/login?returnTo='+encodeURIComponent(location.pathname+location.search));return}
+      if(!u){if(location.pathname!=='/')location.replace('/login?returnTo='+encodeURIComponent(location.pathname+location.search));return}
       setClient(c);setUser(u);
       const {data:listener}=c.auth.onAuthStateChange((_event,session)=>{if(alive&&session?.user.id!==u.id){requestVersion.current++;setData(empty);setOwner(false);location.replace('/login?returnTo='+encodeURIComponent(location.pathname+location.search))}});
       unsubscribe=()=>{listener.subscription.unsubscribe();c.auth.stopAutoRefresh()};
@@ -67,20 +63,36 @@ function App() {
     }catch(error){if(version===requestVersion.current)setMessage(error instanceof Error?error.message:'No se pudieron cargar tus datos.')}finally{if(version===requestVersion.current)setBusy(false)}
   };
   useEffect(()=>{void reload()},[client,user?.id]);
-  const ctx={client:client!,user:user!,data,reload,notify:setMessage,paused,setPaused,worker,gymCount};
-  if((busy&&!owner)||(owner===null&&client&&user&&!message))return <main className="loading" role="status">Abriendo herramientas…</main>;
-  if(!client||!user)return <main className="loading error"><h1>Herramientas de tu espacio</h1><p role="alert">{message||'Abriendo el acceso del portal…'}</p><a href="/login">Ir al acceso del portal</a><a href="/">Volver a mis registros</a></main>;
-  if(!owner)return <main className="onboarding"><h1>Acceso al espacio</h1><p role="alert">{message||'Esta cuenta no es la propietaria de este espacio.'}</p><button onClick={()=>void reload()}>Comprobar acceso</button><a href="/login">Volver al acceso del portal</a></main>;
-  return <BrowserRouter><div className="shell"><aside className={menu?'sidebar open':'sidebar'}><div className="brand"><a href="/"><strong>Personal OS</strong><small>Herramientas de tu espacio</small></a></div><button className="mobile menu-close" type="button" onClick={()=>{setMenu(false);menuButton.current?.focus()}}>Cerrar menú</button><nav id="workspace-navigation" aria-label="Herramientas">{nav.map(([to,label,Icon])=>to==='/'||to==='/gym/'?<a key={to} href={to}><Icon size={19} aria-hidden="true"/>{label}</a>:<NavLink key={to} to={to} onClick={()=>setMenu(false)}><Icon size={19} aria-hidden="true"/>{label}</NavLink>)}</nav><div className="sidebar-bottom"><div className="worker-state"><span className={worker?.online?'dot live':'dot'}/><div><strong>{worker?.online?'HP conectado':'HP desconectado'}</strong><small>Agentes y sincronización</small></div></div><a className="profile" href="/settings"><span aria-hidden="true">{user.email?.slice(0,1).toUpperCase()}</span><div><strong>Mi conexión</strong><small>{user.email}</small></div></a></div></aside><div className="main"><header><button ref={menuButton} className="iconbtn mobile" type="button" aria-label="Abrir menú de herramientas" aria-expanded={menu} aria-controls="workspace-navigation" onClick={()=>setMenu(!menu)}><Menu aria-hidden="true"/> Menú</button><h1>Herramientas de tu espacio</h1><div className="header-right"><span className={paused?'pause-pill':'running-pill'}>{paused?'Agentes en pausa':'Agentes activos'}</span><button type="button" onClick={()=>setTheme(theme==='dark'?'light':'dark')}>Tema {theme==='dark'?'claro':'oscuro'}</button></div></header>{message&&<div className="notice" role="alert">{message}<button onClick={()=>setMessage('')} aria-label="Cerrar aviso"><X size={16} aria-hidden="true"/></button></div>}<main>{busy&&<p role="status">Actualizando herramientas…</p>}<p className="workspace-limit">Se muestran hasta 500 registros recientes por área.</p><Routes><Route path="/study" element={<Study {...ctx}/>} /><Route path="/calendar" element={<Calendar {...ctx}/>} /><Route path="/finance" element={<Finance {...ctx}/>} /><Route path="/goals" element={<Goals {...ctx}/>} /><Route path="/knowledge" element={<Knowledge {...ctx}/>} /><Route path="/projects" element={<Projects {...ctx}/>} /><Route path="/system" element={<System {...ctx}/>} /><Route path="*" element={<p>Esta herramienta no existe. <a href="/">Volver a mis registros</a></p>} /></Routes></main><footer className="workspace-footer"><a href="/">Volver a mis registros</a><a href="/login">Acceso del portal</a></footer></div></div></BrowserRouter>;
+  const {areaId,section}=areaLocation();
+  const records=data.records.filter(row=>!areaId||row.data.area===areaId||(Array.isArray(row.data.areas)&&row.data.areas.includes(areaId))||(!row.data.area&&!row.data.areas&&(areaId==='education'?['course','assessment','topic','study_session'].includes(row.kind):areaId==='health'?['training_plan','health_metric'].includes(row.kind):areaId==='five-buckets'?['note','topic','contact','goal'].includes(row.kind):areaId==='family-friends'?row.kind==='contact':areaId==='work'&&!['course','assessment','topic','study_session','health_metric','training_plan','contact'].includes(row.kind))));
+  const ctx={client:client!,user:user!,data:{...data,records},reload,notify:setMessage,paused,setPaused,worker,gymCount,areaId};
+  const navigation=<PersonalNavigation areaId={areaId} section={section} theme={theme} onThemeChange={()=>setTheme(theme==='dark'?'light':'dark')}/>;
+  if((busy&&!owner)||(owner===null&&client&&user&&!message))return <div className="life-shell">{navigation}<main id="main" className="life-main" role="status">Abriendo tu espacio…</main></div>;
+  if(!client||!user)return <div className="life-shell">{navigation}<main id="main" className="life-main life-welcome"><h1>Tu vida, de un vistazo</h1><p>Lo que has hecho, lo que está en marcha y lo que viene.</p>{message&&<p role="alert">{message}</p>}<p>Entra a tu espacio privado para consultar tus áreas y los resúmenes de tus agentes.</p><a href="/login">Entrar a mi espacio</a><a href="/?local=1">Usar registros de este navegador</a></main></div>;
+  if(!owner)return <div className="life-shell">{navigation}<main id="main" className="life-main"><h1>Acceso al espacio</h1><p role="alert">{message||'Esta cuenta no es la propietaria de este espacio.'}</p><button onClick={()=>void reload()}>Comprobar acceso</button><a href="/login">Volver al acceso del portal</a></main></div>;
+  return <div className="life-shell">{navigation}{message&&<div className="notice" role="alert">{message}<button onClick={()=>setMessage('')} aria-label="Cerrar aviso"><X size={16} aria-hidden="true"/></button></div>}<main id="main" className="life-main">{busy&&<p role="status">Actualizando herramientas…</p>}<AreaContent ctx={ctx} areaId={areaId} section={section}/></main><footer className="workspace-footer"><a href="/records">Mis registros</a><a href="/settings">Mi conexión</a></footer></div>;
 }
-type Ctx={client:SupabaseClient;user:User;data:Data;reload:()=>Promise<void>;notify:(v:string)=>void;paused:boolean;setPaused:(v:boolean)=>void;worker:Record<string,unknown>|null;gymCount:number};
+type Ctx={client:SupabaseClient;user:User;data:Data;reload:()=>Promise<void>;notify:(v:string)=>void;paused:boolean;setPaused:(v:boolean)=>void;worker:Record<string,unknown>|null;gymCount:number;areaId?:AreaId};
+function AreaContent({ctx,areaId,section}:{ctx:Ctx;areaId?:AreaId;section:string}){
+  const area=areas.find(item=>item.id===areaId);
+  if(location.pathname.startsWith('/areas/')&&(!area||!area.sections.some(([id])=>id===section)))return <><h1>Apartado no encontrado</h1><a href="/">Volver al inicio</a></>;
+  let tools:React.ReactNode=null;let toolLabel='Herramientas de esta área';
+  if(areaId==='work'&&section==='finance'){tools=<Finance {...ctx}/>;toolLabel='Editar y revisar movimientos'}
+  if((areaId==='work'||areaId==='business')&&section==='projects'){tools=<Projects {...ctx}/>;toolLabel='Gestionar proyectos'}
+  if(areaId==='education'&&['studies','materials'].includes(section)){tools=<Study {...ctx}/>;toolLabel='Gestionar estudios y materiales'}
+  if(areaId==='education'&&section==='assessments'){tools=<section className="panel"><Title label="Evaluaciones" action={<RecordForm ctx={ctx} kind="assessment" button="Nueva evaluación"/>}/><RecordList ctx={ctx} kinds={['assessment']}/></section>;toolLabel='Gestionar evaluaciones'}
+  if(areaId==='five-buckets'&&section==='knowledge'){tools=<Knowledge {...ctx}/>;toolLabel='Gestionar notas y contactos'}
+  if(location.pathname==='/goals'){tools=<Goals {...ctx}/>;toolLabel='Gestionar objetivos'}
+  if(areaId==='system'&&section==='approvals'){tools=<System {...ctx}/>;toolLabel='Control y aprobaciones'}
+  return <><Dashboard client={ctx.client} areaId={areaId} section={section}/>{tools&&<details className="life-tools" open={!location.pathname.startsWith('/areas/')}><summary>{toolLabel}</summary><p>Herramientas secundarias. Se muestran hasta 500 registros recientes; el resumen superior consulta los totales completos.</p>{tools}</details>}</>;
+}
 function Title({label,subtitle,action}:{label:string;subtitle?:string;action?:React.ReactNode}){return <div className="section-title"><div><h2>{label}</h2>{subtitle&&<p>{subtitle}</p>}</div>{action}</div>}
 function Blank({icon:Icon,title,detail}:{icon:typeof FileText;title:string;detail:string}){return <div className="blank"><Icon size={26}/><strong>{title}</strong><p>{detail}</p></div>}
 function RecordForm({ctx,kind,button='Agregar',placeholder='Título'}:{ctx:Ctx;kind:Row['kind'];button?:string;placeholder?:string}){
   const[title,setTitle]=useState('');const[due,setDue]=useState('');const[open,setOpen]=useState(false);const[saving,setSaving]=useState(false);const id=useId();
   return <><button className="button" onClick={()=>setOpen(!open)}><Plus size={16} aria-hidden="true"/>{button}</button>{open&&<form className="inline-form" onSubmit={async event=>{
     event.preventDefault();if(saving)return;if(!title.trim()){ctx.notify('Escribe un título antes de guardar.');return}setSaving(true);
-    try{const result=await ctx.client.from('records').insert({owner_id:ctx.user.id,kind,title:title.trim(),due_at:due?new Date(due).toISOString():null,data:{},status:'active'});if(result.error)throw result.error;setTitle('');setDue('');setOpen(false);await ctx.reload()}catch(error){ctx.notify(error instanceof Error?error.message:'No se pudo guardar. El título sigue en el formulario.')}finally{setSaving(false)}
+    try{const section=areaLocation().section;const result=await ctx.client.from('records').insert({owner_id:ctx.user.id,kind,title:title.trim(),due_at:due?new Date(due).toISOString():null,data:{area:ctx.areaId||'work',...(ctx.areaId==='five-buckets'&&section!=='overview'?{bucket:section==='skills'?'skill':section}: {})},status:'active'});if(result.error)throw result.error;setTitle('');setDue('');setOpen(false);await ctx.reload()}catch(error){ctx.notify(error instanceof Error?error.message:'No se pudo guardar. El título sigue en el formulario.')}finally{setSaving(false)}
   }}><label htmlFor={id+'-title'}>Título<input id={id+'-title'} autoFocus value={title} onChange={event=>setTitle(event.target.value)} placeholder={placeholder} maxLength={1000} required/></label><label htmlFor={id+'-due'}>Fecha y hora (opcional)<input id={id+'-due'} type="datetime-local" value={due} onChange={event=>setDue(event.target.value)}/></label><button className="primary" disabled={saving}>{saving?'Guardando…':'Guardar'}</button></form>}</>;
 }
 function RecordList({ctx,kinds,limit}:{ctx:Ctx;kinds:string[];limit?:number}){const rows=ctx.data.records.filter(r=>kinds.includes(r.kind)&&!['done','completed','cancelled'].includes(r.status)).slice(0,limit??100);return rows.length?<div className="list">{rows.map(r=><div className="list-row" key={r.id}><button className="check" title="Marcar como hecho" aria-label={`Marcar como hecho ${r.title}`} onClick={async()=>{const x=await ctx.client.from('records').update({status:'completed'}).eq('id',r.id).eq('owner_id',ctx.user.id);if(x.error)ctx.notify(x.error.message);else await ctx.reload()}}><Check size={14} aria-hidden="true"/></button><div><strong>{r.title}</strong><small>{r.kind==='task'?'Tarea':r.kind==='event'?'Evento':r.kind==='goal'?'Objetivo':r.kind}</small></div><span className="muted">{formatDate(r.due_at)}</span></div>)}</div>:<Blank icon={ClipboardList} title="Todo al día" detail="Agrega tu primer elemento para empezar."/>}

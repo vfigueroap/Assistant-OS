@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { httpsUrl } from '../worker/src/config.js';
 import { stampPut } from '../../vendor/opengym/api/sync-stamps.js';
+import { gymDashboardPlan } from './gym-dashboard.js';
 
 const CHUNK_BYTES = 256 * 1024;
 const INLINE_BYTES = 1024 * 1024;
@@ -62,7 +63,23 @@ async function saveState(client: SupabaseClient, input: z.infer<typeof stateInpu
     else delete next.resetIds;
   }
   stampPut(current.state, next, { overRead: true, stamped: input.stamped, now: Date.now() });
-  return result(client.rpc('put_gym_state', { p_state: next, p_base_rev: input.baseRev, p_base_wid: input.baseWid, p_stamped: true }));
+  const saved = await result(client.rpc('put_gym_state', { p_state: next, p_base_rev: input.baseRev, p_base_wid: input.baseWid, p_stamped: true }));
+  if (!saved.conflict) await projectGymPlan(client, next, saved.rev);
+  return saved;
+}
+
+async function projectGymPlan(client: SupabaseClient, state: Record<string, unknown>, rev: number) {
+  try {
+    const plan = gymDashboardPlan(state);
+    const projected = await client.rpc('update_gym_dashboard_plan', { p_rev: rev, p_plan: plan });
+    if (projected.error) console.warn('gym_dashboard_projection_unavailable');
+  } catch { console.warn('gym_dashboard_projection_unavailable'); }
+}
+
+async function readGymState(client: SupabaseClient) {
+  const current = await result(client.rpc('get_gym_state'));
+  await projectGymPlan(client, current.state, current.rev);
+  return current;
 }
 
 async function transfer(client: SupabaseClient, owner: string, value: Record<string, unknown>, status = 200) {
@@ -112,7 +129,7 @@ export async function handleRequest(request: Request, env: NodeJS.ProcessEnv = p
       const value = await result(client.rpc('get_gym_state'));
       return json({ rev: value.rev, wid: value.wid });
     }
-    if (url.pathname === '/gym/api/data' && method === 'GET') return transfer(client, owner, await result(client.rpc('get_gym_state')));
+    if (url.pathname === '/gym/api/data' && method === 'GET') return transfer(client, owner, await readGymState(client));
     if (url.pathname === '/gym/api/data' && method === 'PUT') {
       const input = stateInput.parse(await body(request));
       const value = await saveState(client, input);

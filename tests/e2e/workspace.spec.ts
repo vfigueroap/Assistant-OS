@@ -23,6 +23,7 @@ async function workspace(page:Page, signedIn=true){
     const rpc=/^\/rest\/v1\/rpc\/(.+)$/.exec(url.pathname);
     if(rpc){
       const name=rpc[1];const data=request.postDataJSON()??{};state.rpcs.push({name,data});
+      if(name==='get_dashboard')return route.fulfill({json:{generated_at:new Date().toISOString(),recent:[],current:[],upcoming:[],snapshots:[]}});
       if(name==='is_workspace_owner')return route.fulfill({json:true});
       if(name==='get_workspace_settings')return route.fulfill({json:{paused:state.paused}});
       if(name==='ui_worker_status')return route.fulfill({json:{online:false,last_seen_at:null}});
@@ -45,29 +46,49 @@ async function workspace(page:Page, signedIn=true){
   return state;
 }
 
-test('las herramientas comparten el acceso del portal y conservan las siete rutas',async({page})=>{
+test('las nueve áreas comparten acceso y conservan las herramientas y rutas legadas',async({page})=>{
   const state=await workspace(page);
   await page.goto('/study');
+  await expect(page.getByRole('heading',{name:'Educación',exact:true})).toBeVisible();
   await expect(page.getByRole('heading',{name:'Estudios',exact:true})).toBeVisible();
   for(const width of [320,1440]){
     await page.setViewportSize({width,height:1000});
     for(const theme of ['light','dark']){
       await page.screenshot({path:`.local/workspace-study-${width}-${theme}.png`,fullPage:true});
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
       await page.getByRole('button',{name:/^Tema /}).click();
     }
   }
   await page.setViewportSize({width:1280,height:900});
-  const routes=[['Estudios','Estudios'],['Calendario','Calendario'],['Finanzas','Finanzas'],['Objetivos','Objetivos'],['Conocimiento','Notas'],['Proyectos','Proyectos'],['Sistema','Control de agentes']];
-  for(const[label,heading]of routes){await page.getByRole('navigation',{name:'Herramientas'}).getByRole('link',{name:label,exact:true}).click();await expect(page.getByRole('heading',{name:heading,exact:true})).toBeVisible()}
+  for(const label of ['Trabajo','Salud','Espiritualidad','Pareja','Familia y amigos','Cinco baldes','Sistema','Negocios','Educación']){
+    await page.getByRole('button',{name:'Abrir áreas',exact:true}).click();
+    const navigation=page.getByRole('navigation',{name:'Áreas principales',exact:true});
+    await expect(navigation.getByRole('link')).toHaveCount(10);
+    await navigation.getByRole('link',{name:label,exact:true}).click();
+    await expect(page.getByRole('heading',{name:label,exact:true,level:1})).toBeVisible();
+    await expect(page.getByRole('navigation',{name:`Apartados de ${label}`,exact:true})).toBeVisible();
+  }
+  const routes=[['/study','Estudios'],['/calendar','Próximos en Salud'],['/finance','Finanzas'],['/goals','Objetivos'],['/knowledge','Notas'],['/projects','Proyectos'],['/system','Control de agentes']];
+  for(const[path,heading]of routes){await page.goto(path);await expect(page.getByRole('heading',{name:heading,exact:true})).toBeVisible()}
+  await page.goto('/calendar');
+  await expect(page.getByRole('link',{name:'Abrir Google Calendar',exact:true})).toHaveAttribute('href','https://calendar.google.com/calendar/u/0/r');
   await page.setViewportSize({width:320,height:900});
-  await page.getByRole('button',{name:'Abrir menú de herramientas'}).click();
-  await expect(page.getByRole('link',{name:'Mis registros',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Abrir áreas',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Cerrar áreas',exact:true})).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button',{name:'Abrir menú de herramientas'})).toBeFocused();
-  for(let theme=0;theme<2;theme++){expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.getByRole('button',{name:/^Tema /}).click()}
-  await page.setViewportSize({width:1280,height:900});
-  await page.getByRole('link',{name:'Mis registros',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Abrir áreas',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Abrir áreas',exact:true}).click();
+  await page.getByRole('navigation',{name:'Herramientas personales',exact:true}).getByRole('link',{name:'Mis registros',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Lo que quieres hacer y recordar'})).toBeVisible();
+  expect(state.rpcs.some(call=>call.name==='get_dashboard'&&call.data.p_area==='education')).toBe(true);
+  expect(state.errors).toEqual([]);expect(state.unexpected).toEqual([]);
+});
+
+test('las áreas privadas conservan el acceso compartido del portal',async({page})=>{
+  const state=await workspace(page,false);
+  await page.goto('/areas/education/studies');
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fareas%2Feducation%2Fstudies$/);
+  expect(state.rpcs).toEqual([]);
   expect(state.errors).toEqual([]);expect(state.unexpected).toEqual([]);
 });
 
@@ -83,7 +104,7 @@ test('crear registros y subir material siguen usando los contratos existentes',a
   await expect(page.getByText('clase.txt',{exact:true})).toBeVisible();
   expect(state.uploads).toHaveLength(1);
   expect(state.rpcs.some(call=>call.name==='enqueue_job'&&call.data.p_kind==='document.extract')).toBe(true);
-  await page.getByRole('link',{name:'Proyectos',exact:true}).click();
+  await page.goto('/projects');
   await page.getByRole('button',{name:'Nuevo proyecto',exact:true}).click();
   await page.getByLabel('Título',{exact:true}).fill('Proyecto conservado');
   await page.getByRole('button',{name:'Guardar',exact:true}).click();
@@ -107,7 +128,7 @@ test('finanzas, trabajos y programación conservan sus acciones sin servicios re
   await page.getByRole('button',{name:'Guardar',exact:true}).click();
   await expect(page.getByText('Materiales',{exact:true})).toBeVisible();
   expect(state.tables.budgets[0].amount_minor).toBe(10000);
-  await page.getByRole('link',{name:'Sistema',exact:true}).click();
+  await page.goto('/system');
   await page.getByRole('button',{name:'Reanudar agentes',exact:true}).click();
   await expect(page.getByRole('button',{name:'Pausar agentes',exact:true})).toBeVisible();
   await page.getByPlaceholder('ID de conexión, por ejemplo personal').fill('personal');

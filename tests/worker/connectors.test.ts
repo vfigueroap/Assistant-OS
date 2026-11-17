@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { permittedTelegram } from '../../apps/worker/src/connectors/telegram.js';
-import { plainGmail, receiptAttachments } from '../../apps/worker/src/connectors/gmail.js';
+import { gmailCaptureArea, gmailLabelAreas, plainGmail, receiptAttachments } from '../../apps/worker/src/connectors/gmail.js';
 import { extractFinance, subtractBusy } from '../../apps/worker/src/handlers.js';
 
 describe('untrusted capture boundaries', () => {
@@ -26,6 +26,13 @@ describe('untrusted capture boundaries', () => {
     const parsed=extractFinance('Comercio: Librería\nTotal: $10.990');
     expect(parsed.amount_minor).toBe(10990);
     expect(parsed.warnings).toContain('draft_requires_human_review');
+  });
+  it('classifies only explicitly mapped labels as work or education documents', () => {
+    const options = { ownerId: owner.ownerId, labelIds: ['finance', 'study'], senders: ['allowed@example.com'], labelAreas: gmailLabelAreas('{"study":"education"}') };
+    expect(gmailCaptureArea(['study'], options)).toEqual({ area: 'education', classification: 'document' });
+    expect(gmailCaptureArea(['finance'], options)).toEqual({ area: 'work', classification: 'financial_evidence' });
+    expect(() => gmailLabelAreas('{"study":"made-up-area"}')).toThrow('gmail_label_areas_invalid');
+    expect(() => gmailLabelAreas('[]')).toThrow('gmail_label_areas_invalid');
   });
 });
 
