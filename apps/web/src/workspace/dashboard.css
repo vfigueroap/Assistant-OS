@@ -1,7 +1,7 @@
 .life-shell { min-height: 100vh; color: var(--workspace-ink); }
 .life-shell > .life-main { max-width: 1200px; margin: auto; min-height: 65vh; padding: 44px 32px 64px; }
 .life-dashboard { font-size: 15px; line-height: 1.6; min-width: 0; }
-.life-dashboard h1 { font-size: clamp(32px, 4vw, 44px); line-height: 1.15; font-weight: 500; letter-spacing: -.045em; margin: 8px 0 0; }
+.life-dashboard h1 { font-size: clamp(32px, 4vw, 44px); line-height: 1.15; font-weight: 550; letter-spacing: -.045em; margin: 8px 0 0; }
 .life-dashboard h2 { font-size: 17px; line-height: 1.4; font-weight: 600; letter-spacing: -.025em; margin: 0 0 18px; }
 .life-dashboard h3 { font-size: 15px; line-height: 1.5; font-weight: 550; letter-spacing: -.015em; margin: 0; }
 .life-dashboard p { margin: 6px 0 16px; overflow-wrap: anywhere; }
@@ -13,15 +13,15 @@
 .life-date::first-letter { text-transform: uppercase; }
 .life-intro .life-description { margin: 12px 0 0; max-width: 560px; color: var(--workspace-muted); }
 .life-sync { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; }
-.life-dashboard .life-refresh { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--workspace-line); border-radius: 7px; background: var(--workspace-paper); color: var(--workspace-ink); font-weight: 500; font-size: 13px; min-height: 44px; }
-.life-refresh:enabled:hover { background: var(--workspace-hover); border-color: var(--workspace-muted); }
+.life-dashboard .life-refresh { display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border: 1px solid var(--workspace-control); border-radius: 6px; background: var(--workspace-paper); color: var(--workspace-ink); font-weight: 500; font-size: 13px; min-height: 44px; }
+.life-refresh:enabled:hover { background: var(--workspace-hover); border-color: var(--workspace-ink); }
 .life-refresh:disabled { opacity: .55; }
-.life-sync .life-freshness { margin: 8px 0 0; font-size: 12px; }
+.life-sync .life-freshness { margin: 8px 0 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 .life-freshness, .life-list p, .life-list time, .life-dashboard small { color: var(--workspace-muted); font-size: 12px; }
 .life-home { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr); gap: 52px; align-items: start; }
 .life-agenda { min-width: 0; }
 .life-section { padding: 28px 0; border-top: 1px solid var(--workspace-line); min-width: 0; }
-.life-agenda > .life-section { padding: 26px 28px; border: 1px solid var(--workspace-line); border-radius: 10px; background: var(--workspace-paper); margin-bottom: 20px; }
+.life-agenda > .life-section { padding: 26px 28px; border: 1px solid var(--workspace-line); border-radius: 8px; background: var(--workspace-paper); margin-bottom: 20px; }
 .life-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .life-section-heading h2 { margin: 0; }
 .life-section-heading > a, .life-section-heading > span { font-size: 12px; white-space: nowrap; }
@@ -29,7 +29,7 @@
 .life-agenda .life-upcoming { padding-top: 18px; }
 .life-upcoming .life-section-heading { padding-bottom: 12px; border-bottom: 1px solid var(--workspace-line); }
 .life-agenda-empty { padding: 32px 0 28px; max-width: 390px; }
-.life-agenda-empty h3 { font-size: 24px; font-weight: 450; letter-spacing: -.035em; line-height: 1.35; margin: 0 0 12px; }
+.life-agenda-empty h3 { font-size: 24px; font-weight: 500; letter-spacing: -.035em; line-height: 1.35; margin: 0 0 12px; }
 .life-agenda-empty p { margin: 0; color: var(--workspace-muted); font-size: 14px; }
 .life-empty { color: var(--workspace-muted); max-width: 660px; }
 .life-activity-empty .life-empty { margin-bottom: 0; font-size: 14px; max-width: 380px; }
@@ -61,11 +61,11 @@
 .life-metrics dt { font-size: 12px; color: var(--workspace-muted); }
 .life-metrics dd { font-size: 23px; font-weight: 500; margin: 6px 0; letter-spacing: -.03em; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .life-finance { display: flex; flex-wrap: wrap; gap: 24px; }
-.life-finance article { flex: 1 1 250px; padding: 24px; border: 1px solid var(--workspace-line); border-radius: 10px; background: var(--workspace-paper); }
+.life-finance article { flex: 1 1 250px; padding: 24px; border: 1px solid var(--workspace-line); border-radius: 8px; background: var(--workspace-paper); }
 .life-finance article > p:not(.life-total) { font-size: 13px; }
 .life-total { font-size: clamp(30px, 4vw, 40px); font-weight: 500; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
 .life-telemetry { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.life-telemetry article { border: 1px solid var(--workspace-line); background: var(--workspace-paper); padding: 24px; min-width: 0; border-radius: 10px; }
+.life-telemetry article { border: 1px solid var(--workspace-line); background: var(--workspace-paper); padding: 24px; min-width: 0; border-radius: 8px; }
 .life-telemetry article > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .life-telemetry article > p { color: var(--workspace-muted); font-size: 12px; margin: 8px 0 18px; }
 .life-status { font-size: 12px; font-weight: 500; color: var(--workspace-accent); }

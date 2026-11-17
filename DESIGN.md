@@ -1,9 +1,9 @@
 # Personal OS
 
-Un resumen personal tranquilo, útil para consultar qué viene, qué está en marcha y qué ha pasado. La revisión visual responde a la petición de una interfaz más limpia y cuidada: conserva el verde de Personal OS, reduce el texto repetido y deja que los datos reales marquen la densidad. ENERGY 1 / RHYTHM 1 / MOTION 1.
+Un resumen personal tranquilo, útil para consultar qué viene, qué está en marcha y qué ha pasado. La revisión visual responde a la petición de una interfaz más limpia y cuidada: usa pizarra y azul para dar precisión a la interfaz, y deja que los datos reales marquen la densidad. ENERGY 1 / RHYTHM 1 / MOTION 1.
 
-- Papel cálido #f6f5f1, superficies #fffefb y tinta #232824. El verde #35624b identifica acciones y selección; no tiñe toda la interfaz.
-- Tema oscuro carbón #171b18, superficies #202621 y texto #edf0e9. Misma jerarquía y contraste, respetando la preferencia guardada.
+- Tema claro con fondo #f4f7fa, superficies #ffffff y texto #1b2636. El azul #205cb2 identifica enlaces, acciones primarias, selección y foco.
+- Tema oscuro pizarra #141820, superficies #1c222c, texto #eef2f8 y acento #8fb9ff. Misma jerarquía y contraste, respetando la preferencia guardada.
 - DM Sans variable, servida localmente con su licencia SIL. Títulos de peso medio, texto de lectura sin adornos y cifras tabulares donde se comparan valores.
 - Inicio «Hoy»: agenda y actividad como contenido principal; índice de las nueve áreas a la derecha. En móvil, una sola columna conserva ese orden.
 - Los próximos compromisos tienen una superficie propia para distinguirlos de la navegación. Sin métricas inventadas ni cuadrículas de tarjetas que repitan descripciones vacías.
